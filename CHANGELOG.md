@@ -2,7 +2,7 @@
 
 This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.1.2] - 2026-11-12
 
 ### Added
 
@@ -52,6 +52,7 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [#25](https://github.com/dblock/rust-crate-release/pull/25): Remove the logo background and shadow and align its visible height with sibling release-tool logos - [@dblock](https://github.com/dblock).
 - [#24](https://github.com/dblock/rust-crate-release/pull/24): Automatically detect supported handwritten changelogs or skip missing files, reject unknown or ambiguous formats before source edits, and preserve explicit overrides and semantic generated notes - [@dblock](https://github.com/dblock).
 
-[Unreleased]: https://github.com/dblock/rust-crate-release/compare/v0.1.1...master
+[Unreleased]: https://github.com/dblock/rust-crate-release/compare/v0.1.2...master
+[0.1.2]: https://github.com/dblock/rust-crate-release/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dblock/rust-crate-release/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dblock/rust-crate-release/releases/tag/v0.1.0
