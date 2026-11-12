@@ -5,7 +5,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/rust-crate-release.svg)](https://crates.io/crates/rust-crate-release) [![Test](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml) [![Lint](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml) [![Package](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml)
 
-Release your Rust crate from GitHub Actions. rcr tests your project, publishes to crates.io, optionally updates the changelog, creates a Git tag and GitHub Release, and prepares the next version. Ported from [ruby-gem-release](https://github.com/dblock/ruby-gem-release) and [npm-package-release](https://github.com/dblock/npm-package-release).
+Implements [Releases as Code](https://code.dblock.org/2026/11/12/releases-as-code.html) for Rust crates. Release from GitHub Actions, test your project, publish to crates.io, optionally update the changelog, create a Git tag and GitHub Release, and prepare the next development iteration. See [npm-package-release](https://github.com/dblock/npm-package-release) and [ruby-gem-release](https://github.com/dblock/ruby-gem-release) for similar projects in the JavaScript and Ruby ecosystems, respectively.
 
 ## Usage
 
