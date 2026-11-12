@@ -68,7 +68,7 @@ Keep this design focused on the current agreed architecture and relevant constra
 
 The original open Cargo crate and upward release arrow represent exact packaged bytes moving into a release. GitHub Copilot created the editable SVG specifically for this project on behalf of @dblock; it is covered by the repository's MIT license. No Rust logo, upstream artwork, fonts, or external images were copied or adapted.
 
-Keep `assets/rust-crate-release.svg` as the editable source and `assets/rust-crate-release.png` as its 512-pixel raster counterpart. README places the logo before the title at 160 pixels with descriptive alt text. Both assets are explicitly packaged and required by distribution validation. Regenerate with librsvg's existing `rsvg-convert` command (2.58.1 was used):
+Keep `assets/rust-crate-release.svg` as the editable source and `assets/rust-crate-release.png` as its 512-pixel raster counterpart. Use a transparent background with no backplate or drop shadow, showing only the crate and arrow. Match the npm sibling's visible height and vertical placement at the shared 160-pixel README size. README places the logo before the title with descriptive alt text. Both assets are explicitly packaged and required by distribution validation. Regenerate with librsvg's existing `rsvg-convert` command (2.58.1 was used):
 
 ```sh
 rsvg-convert --width 512 --height 512 --output assets/rust-crate-release.png assets/rust-crate-release.svg
