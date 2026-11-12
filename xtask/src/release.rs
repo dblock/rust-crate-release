@@ -10,7 +10,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const DOCUMENTS: [&str; 3] = ["README.md", "docs/actions.md", "docs/cli.md"];
+const DOCUMENTS: [&str; 4] = [
+    "README.md",
+    "docs/actions.md",
+    "docs/cli.md",
+    "docs/releases.md",
+];
 
 pub fn configure(workflow: &mut ReleaseWorkflow) -> Result {
     workflow.hooks.next = workflow
@@ -96,9 +101,10 @@ mod tests {
         assert_eq!(update_pins(&updated, "0.2.0")?, updated);
         let directory = tempfile::tempdir()?;
         fs::create_dir(directory.path().join("docs"))?;
-        fs::write(directory.path().join("README.md"), source)?;
-        fs::write(directory.path().join("docs/actions.md"), [0xff])?;
-        fs::write(directory.path().join("docs/cli.md"), source)?;
+        for name in DOCUMENTS {
+            fs::write(directory.path().join(name), source)?;
+        }
+        fs::write(directory.path().join("docs/releases.md"), [0xff])?;
         assert!(update_documents(directory.path(), "0.2.0").is_err());
         assert_eq!(
             fs::read_to_string(directory.path().join("README.md"))?,
