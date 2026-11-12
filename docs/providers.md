@@ -6,7 +6,7 @@ Construct `Git::new(root, default_branch, remote)` and use it through `ReleaseRe
 
 Canonical paths use `dunce` to retain normal Windows drive/UNC syntax where safe. Rust's verbatim `\\?\` paths are valid filesystem inputs but can break Git's bundle locking and Cargo's Git-backed package discovery; filesystem identity and containment checks remain canonical.
 
-Trusted preparation starts from a clean checkout. `stage_changes` enumerates changed and untracked paths, stages literal names rather than glob-expanded pathspecs, and returns the index tree. After validation, `assert_prepared(tree)` rejects index, tracked, or untracked changes. `commit` uses only that exact tree and reuses an existing matching HEAD rather than making an empty duplicate.
+Trusted preparation starts from a clean checkout. `stage_changes` enumerates changed and untracked paths, stages literal names rather than glob-expanded pathspecs, and returns the index tree. After validation, `assert_prepared(tree)` rejects index, tracked, or untracked changes. `commit` uses only that exact tree and reuses an existing matching HEAD rather than making an empty duplicate. If a remote descendant already contains precisely the staged tree, a compare-and-swap fast-forward adopts that matching commit without rewriting source or creating equivalent divergent history.
 
 `ensure_tag` reuses matching local tags and rejects conflicts without moving them. `preserve_bundle` writes an immutable recovery bundle containing the matching release tag. The default artifact directory is inside Git's private metadata (`git rev-parse --git-path rcr`), so retained diagnostics do not dirty consumer projects or require modifying their ignore files.
 

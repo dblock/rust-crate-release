@@ -2,7 +2,7 @@
 
 ## Current Status
 
-This is an unpublished `0.1.0` library with typed workflow/changelog/semantic building blocks and Cargo, registry, Git, hosting, and diagnostic providers. No integrated release CLI, release workflow, credentials, trusted publisher, or GitHub release environment is configured. Instructions below define acceptance criteria for the remaining orchestration; they are not executable release commands or authorization to publish.
+This is an unpublished `0.1.0` library with typed numeric/semantic release orchestration and replaceable Cargo, registry, Git, hosting, validation, and diagnostic providers. No release CLI, Actions release workflow, credentials, trusted publisher, or GitHub release environment is configured. The [Release Workflows](docs/releases.md) guide documents implemented library behavior; instructions below are release acceptance criteria, not executable CLI commands or authorization to publish.
 
 ## Validate the Distribution
 

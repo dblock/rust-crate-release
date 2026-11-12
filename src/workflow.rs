@@ -9,6 +9,9 @@ pub trait Step<Input>: Send + Sync {
     type Output;
     fn id(&self) -> &str;
     fn run(&self, input: Input, execution: &ExecutionContext) -> Result<Self::Output>;
+    fn outcome(&self, _output: &Self::Output) -> StepOutcome {
+        StepOutcome::Success
+    }
 }
 
 pub trait WorkflowObserver: Send + Sync {
@@ -105,10 +108,9 @@ impl<I: 'static, O: 'static> Workflow<I, O> {
                     }
                 }
                 let result = step.run(input, &invocation.execution);
-                let outcome = if result.is_ok() {
-                    StepOutcome::Success
-                } else {
-                    StepOutcome::Failure
+                let outcome = match &result {
+                    Ok(output) => step.outcome(output),
+                    Err(_) => StepOutcome::Failure,
                 };
                 invocation.execution.history.push(StepRecord {
                     id: id.clone(),

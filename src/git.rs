@@ -13,11 +13,14 @@ pub struct RepositoryState {
     pub branch: String,
     pub remote_head: String,
     pub timestamp: i64,
+    pub shallow: bool,
 }
 
 pub trait ReleaseRepository: Send + Sync {
     fn root(&self) -> &Path;
     fn inspect(&self) -> Result<RepositoryState>;
+    fn timestamp(&self, commit: &str) -> Result<i64>;
+    fn contains(&self, ancestor: &str, descendant: &str) -> Result<bool>;
     fn assert_clean(&self) -> Result;
     fn stage_changes(&self) -> Result<String>;
     fn assert_prepared(&self, tree: &str) -> Result;
@@ -258,9 +261,21 @@ impl ReleaseRepository for Git {
             tree: self.git(&["rev-parse", "HEAD^{tree}"])?,
             remote_head: self.remote_head()?,
             timestamp: self.timestamp(&head)?,
+            shallow: self.git(&["rev-parse", "--is-shallow-repository"])? == "true",
             head,
             branch,
         })
+    }
+
+    fn timestamp(&self, commit: &str) -> Result<i64> {
+        Git::timestamp(self, commit)
+    }
+
+    fn contains(&self, ancestor: &str, descendant: &str) -> Result<bool> {
+        match self.is_ancestor(ancestor, descendant) {
+            Ok(result) => Ok(result),
+            Err(_) => self.remote_contains(ancestor, descendant),
+        }
     }
 
     fn assert_clean(&self) -> Result {
@@ -304,7 +319,15 @@ impl ReleaseRepository for Git {
     fn commit(&self, tree: &str, message: &str) -> Result<String> {
         self.assert_prepared(tree)?;
         if self.git(&["rev-parse", "HEAD^{tree}"])? != tree {
-            self.git(&["commit", "-m", message])?;
+            let head = self.git(&["rev-parse", "HEAD"])?;
+            let remote = self.remote_head()?;
+            if self.remote_contains(&head, &remote)?
+                && self.git(&["rev-parse", &format!("{remote}^{{tree}}")])? == tree
+            {
+                self.git(&["update-ref", "HEAD", &remote, &head])?;
+            } else {
+                self.git(&["commit", "-m", message])?;
+            }
         }
         if self.git(&["rev-parse", "HEAD^{tree}"])? != tree {
             return Err(Error::invalid(
@@ -550,6 +573,32 @@ mod tests {
         git.push_release(&release, "v0.1.0", &source.remote_head)?;
         assert_eq!(git.remote_head()?, next);
         assert_eq!(git.commit(&git.inspect()?.tree, "No Duplicate")?, next);
+        Ok(())
+    }
+
+    #[test]
+    fn matching_remote_preparation_is_reused_by_fast_forward_without_rewriting_source() -> Result {
+        let project = GitProject::new(&[("README.md", "Release\n")])?;
+        let git = repository(&project)?;
+        let release = git.inspect()?.head;
+        fs::write(git.root().join("README.md"), "Development\n")?;
+        let tree = git.stage_changes()?;
+        let remote = git.git(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &release,
+            "-m",
+            "Other Runner Prepared Development",
+        ])?;
+        git.git(&["push", "origin", &format!("{remote}:refs/heads/master")])?;
+        assert_eq!(git.commit(&tree, "Do Not Duplicate")?, remote);
+        assert_eq!(git.inspect()?.head, remote);
+        assert_eq!(
+            fs::read_to_string(git.root().join("README.md"))?,
+            "Development\n"
+        );
+        git.assert_clean()?;
         Ok(())
     }
 

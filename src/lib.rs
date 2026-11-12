@@ -2,6 +2,7 @@
 
 pub mod changelog;
 pub mod command;
+pub mod engine;
 mod error;
 pub mod execution;
 pub mod git;

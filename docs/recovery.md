@@ -18,4 +18,4 @@ Registry acceptance, remote Git refs, hosted-release metadata, and next-developm
 
 Inspect the retained archive/bundle, registry version metadata, remote release tag, hosted asset, and current checkout before retrying. An upload timeout may follow acceptance; never assume it means the version was not published. Delayed registry visibility must use bounded fresh lookups, not upload retries. Authentication, transport, malformed metadata, identity, and integrity errors are failures rather than absence.
 
-No automatic publication/recovery command exists yet. The integrated engine and future `rcr verify` will use these provider boundaries; until then, diagnostics are library APIs and the release process remains separately gated in [Releasing](../RELEASING.md).
+No automatic publication/recovery command exists yet. The [Release Workflows](releases.md) engine reconciles actual outputs with explicitly captured source inputs; future `rcr verify` will use the same verification provider. Diagnostics are library APIs and the release process remains separately gated in [Releasing](../RELEASING.md).

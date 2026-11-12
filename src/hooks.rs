@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::execution::ExecutionContext;
+use crate::execution::{ExecutionContext, StepOutcome};
 use crate::workflow::Step;
 use std::sync::Arc;
 
@@ -55,6 +55,9 @@ where
     type Output = O;
     fn id(&self) -> &str {
         self.step.id()
+    }
+    fn outcome(&self, output: &O) -> StepOutcome {
+        self.step.outcome(output)
     }
     fn run(&self, input: I, execution: &ExecutionContext) -> Result<O> {
         for (index, hook) in self.hooks.hooks.iter().enumerate() {

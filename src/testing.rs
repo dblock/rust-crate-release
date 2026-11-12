@@ -283,7 +283,7 @@ impl GitProject {
                 "Cargo.toml",
                 "[package]\nname = \"release-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\nlicense = \"MIT\"\ndescription = \"Isolated release fixture\"\n",
             ),
-            ("src/lib.rs", "pub fn answer() -> u8 { 42 }\n"),
+            ("src/lib.rs", "pub fn answer() -> u8 {\n    42\n}\n"),
             (
                 "Cargo.lock",
                 "version = 4\n\n[[package]]\nname = \"release-fixture\"\nversion = \"0.1.0\"\n",
