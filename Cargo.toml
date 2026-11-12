@@ -28,6 +28,8 @@ include = [
     "/actions/package.json",
     "/actions/package-lock.json",
     "/.github/workflows/release.yml",
+    "/assets/rust-crate-release.svg",
+    "/assets/rust-crate-release.png",
 ]
 
 [workspace]

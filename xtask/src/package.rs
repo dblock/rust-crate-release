@@ -31,6 +31,8 @@ fn expected_file(path: &str) -> bool {
                 | "actions/package.json"
                 | "actions/package-lock.json"
                 | ".github/workflows/release.yml"
+                | "assets/rust-crate-release.svg"
+                | "assets/rust-crate-release.png"
         )
 }
 
@@ -101,6 +103,8 @@ pub fn check(root: &Path) -> Result {
         "Cargo.lock",
         "README.md",
         "LICENSE",
+        "assets/rust-crate-release.svg",
+        "assets/rust-crate-release.png",
     ] {
         if !files.contains(required) {
             return Err(format!("missing archive file: {required}").into());

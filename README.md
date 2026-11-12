@@ -1,3 +1,6 @@
+<img src="assets/rust-crate-release.svg" alt="An open Cargo crate with an upward release arrow" width="160" height="160"> <!-- rumdl-disable-line MD033 MD041 -->
+<!-- Logo-first layout and explicit image sizing are intentional. -->
+
 # rust-crate-release
 
 [![Test](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml) [![Lint](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml) [![Package](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml)

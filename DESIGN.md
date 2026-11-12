@@ -63,3 +63,15 @@ Separate Test, Lint, and Package workflows exercise Rust's supported floor and c
 Exercise real workflows against isolated Git remotes and local publication boundaries, including hook failures, concurrent/failed pushes, delayed visibility, ambiguous upload recovery, and verification after the manifest advances. Include subprocess coverage and meaningful error paths; aim near 100% of project-owned runtime code without trivial tests or excluding real logic. Coverage includes runtime and maintenance code; production authentication is deliberately not exercised, and unavailable branch instrumentation is reported rather than inferred.
 
 Keep this design focused on the current agreed architecture and relevant constraints; remove superseded proposals rather than appending an implementation diary.
+
+## Artwork
+
+The original open Cargo crate and upward release arrow represent exact packaged bytes moving into a release. GitHub Copilot created the editable SVG specifically for this project on behalf of @dblock; it is covered by the repository's MIT license. No Rust logo, upstream artwork, fonts, or external images were copied or adapted.
+
+Keep `assets/rust-crate-release.svg` as the editable source and `assets/rust-crate-release.png` as its 512-pixel raster counterpart. README places the logo before the title at 160 pixels with descriptive alt text. Both assets are explicitly packaged and required by distribution validation. Regenerate with librsvg's existing `rsvg-convert` command (2.58.1 was used):
+
+```sh
+rsvg-convert --width 512 --height 512 --output assets/rust-crate-release.png assets/rust-crate-release.svg
+```
+
+Inspect the full-size PNG and a separate 160-pixel render for clipping, legibility, and preserved transparent margins after edits. Keep the SVG self-contained, free of scripts/external references, and retain editable source, licensing, README placement, and packaged files.
