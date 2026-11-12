@@ -32,6 +32,8 @@ Implementation tests belong in `tests/` and must exercise the real release engin
 
 For local coverage, run `cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info`. Aim near 100% of project-owned runtime line/branch coverage where supported, including subprocess errors and meaningful edge cases; report gaps rather than hiding them with exclusions or trivial assertions. The Test workflow measures runtime and maintenance code together and submits LCOV to Coveralls. Tests use isolated adapters, not live publication or credential exchange; see [GitHub Actions](docs/actions.md#validation-limits) for service-validation limits.
 
+The README coverage badge links to the [master coverage report](https://coveralls.io/github/dblock/rust-crate-release?branch=master); the Coverage job also retains `lcov.info` in its `coverage` artifact. If Coveralls reports that the repository is unclaimed, a repository administrator must sign in with GitHub and select **Claim** in the repository's Coveralls settings to enable commit statuses. Report uploads and the badge work before claiming.
+
 ## Documentation and Tooling
 
 Keep Markdown paragraphs on one source line. Human-readable Markdown headings and YAML workflow/job/step display names use title case; preserve proper names, acronyms, identifiers, and expressions. `cargo xtask lint` enforces these policies with a Markdown parser and a YAML-aware checker, alongside Markdown structure, spelling, Rust, and Actions checks. Review narrow vocabulary exceptions in `.typos.toml`; do not suppress entire documentation trees.
