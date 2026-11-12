@@ -198,6 +198,98 @@ fn disabled_changelog_preserves_existing_files_and_releases_without_any_path() -
 }
 
 struct EditHook(PathBuf);
+
+struct FineHook {
+    name: &'static str,
+    events: Arc<Mutex<Vec<String>>>,
+    fail_after: bool,
+}
+
+impl<I, O> crate::hooks::LifecycleHook<I, O> for FineHook {
+    fn id(&self) -> &str {
+        self.name
+    }
+    fn before(&self, _: &I, _: &ExecutionContext) -> Result {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("{} before", self.name));
+        Ok(())
+    }
+    fn after(&self, _: &O, _: &ExecutionContext) -> Result {
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("{} after", self.name));
+        if self.fail_after {
+            return Err(Error::invalid("fine-grained hook failed"));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn fine_grained_hooks_follow_real_tag_authentication_and_development_boundaries() -> Result {
+    let mut fixture = Fixture::new()?;
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let hook = |name| FineHook {
+        name,
+        events: events.clone(),
+        fail_after: false,
+    };
+    fixture.engine.hooks.tag = fixture.engine.hooks.tag.with(hook("tag"));
+    fixture.engine.hooks.authenticate =
+        fixture.engine.hooks.authenticate.with(hook("authenticate"));
+    fixture.engine.hooks.commit_next = fixture.engine.hooks.commit_next.with(hook("commit_next"));
+    fixture.engine.hooks.push_next = fixture.engine.hooks.push_next.with(hook("push_next"));
+    fixture.engine.release(ReleaseRequest::default())?;
+    assert_eq!(
+        *events.lock().unwrap(),
+        [
+            "tag before",
+            "tag after",
+            "authenticate before",
+            "authenticate after",
+            "commit_next before",
+            "commit_next after",
+            "push_next before",
+            "push_next after",
+        ]
+    );
+    assert_eq!(fixture.publisher.publication_count(), 1);
+    fixture.git.assert_clean()?;
+
+    for authenticate in [true, false] {
+        let mut fixture = Fixture::new()?;
+        let hook = FineHook {
+            name: "blocked",
+            events: Arc::new(Mutex::new(Vec::new())),
+            fail_after: true,
+        };
+        if authenticate {
+            fixture.engine.hooks.authenticate = fixture.engine.hooks.authenticate.with(hook);
+        } else {
+            fixture.engine.hooks.commit_next = fixture.engine.hooks.commit_next.with(hook);
+        }
+        let source = fixture.git.remote_head()?;
+        let error = fixture
+            .engine
+            .release(ReleaseRequest::default())
+            .unwrap_err();
+        assert!(error.to_string().contains("blocked"));
+        assert_eq!(
+            fixture.publisher.publication_count(),
+            usize::from(!authenticate)
+        );
+        if authenticate {
+            assert_eq!(fixture.git.remote_head()?, source);
+        } else {
+            assert_ne!(fixture.git.remote_head()?, fixture.git.inspect()?.head);
+            assert!(fixture.git.remote_tag("v0.1.0")?.is_some());
+        }
+    }
+    Ok(())
+}
 impl crate::hooks::LifecycleHook<Analyzed, Edited> for EditHook {
     fn id(&self) -> &str {
         "trusted-readme"

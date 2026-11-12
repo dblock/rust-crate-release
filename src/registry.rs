@@ -30,6 +30,19 @@ pub trait PackagePublisher: Send + Sync {
         artifact: &Artifact,
         provider: &dyn ExecutionProvider,
     ) -> Result<PublishOutcome>;
+    /// Observes authentication without exposing credentials. Custom publishers
+    /// with a separate authentication boundary should override this method.
+    fn publish_with_authentication(
+        &self,
+        artifact: &Artifact,
+        provider: &dyn ExecutionProvider,
+        before: &dyn Fn() -> Result,
+        after: &dyn Fn() -> Result,
+    ) -> Result<PublishOutcome> {
+        before()?;
+        after()?;
+        self.publish(artifact, provider)
+    }
     fn download(&self, name: &str, version: &Version) -> Result<Vec<u8>>;
 }
 
@@ -355,6 +368,16 @@ impl PackagePublisher for CratesIoPublisher {
         artifact: &Artifact,
         provider: &dyn ExecutionProvider,
     ) -> Result<PublishOutcome> {
+        self.publish_with_authentication(artifact, provider, &|| Ok(()), &|| Ok(()))
+    }
+
+    fn publish_with_authentication(
+        &self,
+        artifact: &Artifact,
+        provider: &dyn ExecutionProvider,
+        before: &dyn Fn() -> Result,
+        after: &dyn Fn() -> Result,
+    ) -> Result<PublishOutcome> {
         let bytes = artifact.validated_bytes()?;
         if let Some(published) = self.lookup(artifact.name(), artifact.version())? {
             if published.checksum != artifact.checksum() {
@@ -363,7 +386,14 @@ impl PackagePublisher for CratesIoPublisher {
             return Ok(PublishOutcome::Reused);
         }
         let body = upload_body(artifact.upload_metadata(), &bytes)?;
+        before()?;
         let authentication = self.authenticate(provider)?;
+        if let Err(error) = after() {
+            if self.revoke(&authentication).is_err() {
+                let _ = provider.summary("Warning: Short-lived crates.io token revocation failed after an authentication hook failure.");
+            }
+            return Err(error);
+        }
         self.upload_authenticated(body, &authentication, provider)
     }
 
@@ -680,6 +710,44 @@ mod tests {
                 "version": { "crate": artifact.name(), "num": artifact.version().to_string(), "checksum": artifact.checksum() }
             }),
         )
+    }
+
+    #[test]
+    fn authentication_callbacks_precede_upload_and_are_skipped_for_existing_versions() {
+        let (_fixture, artifact) = retained_fixture();
+        let server = Server::start(vec![missing()]);
+        let before = std::cell::Cell::new(false);
+        let error = server
+            .publisher()
+            .publish_with_authentication(
+                &artifact,
+                &LocalExecutionProvider,
+                &|| {
+                    before.set(true);
+                    Ok(())
+                },
+                &|| {
+                    assert!(before.get());
+                    Err(Error::invalid("authentication callback stopped upload"))
+                },
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("callback stopped"));
+        assert_eq!(server.finish().len(), 1);
+        let server = Server::start(vec![existing(&artifact)]);
+        assert_eq!(
+            server
+                .publisher()
+                .publish_with_authentication(
+                    &artifact,
+                    &LocalExecutionProvider,
+                    &|| panic!("existing versions must not authenticate"),
+                    &|| panic!("existing versions must not authenticate"),
+                )
+                .unwrap(),
+            PublishOutcome::Reused
+        );
+        assert_eq!(server.finish().len(), 1);
     }
 
     #[test]

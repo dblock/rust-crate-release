@@ -32,6 +32,24 @@ impl<I, O> Clone for LifecycleHooks<I, O> {
 }
 
 impl<I, O> LifecycleHooks<I, O> {
+    pub(crate) fn before(&self, input: &I, execution: &ExecutionContext, step: &str) -> Result {
+        for (index, hook) in self.hooks.iter().enumerate() {
+            hook.before(input, execution).map_err(|error| {
+                error.context(format!("{step} before hook {} at index {index}", hook.id()))
+            })?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn after(&self, output: &O, execution: &ExecutionContext, step: &str) -> Result {
+        for (index, hook) in self.hooks.iter().enumerate() {
+            hook.after(output, execution).map_err(|error| {
+                error.context(format!("{step} after hook {} at index {index}", hook.id()))
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn with<H: LifecycleHook<I, O> + 'static>(&self, hook: H) -> Self {
         let mut hooks = self.hooks.clone();
         hooks.push(Arc::new(hook));
@@ -60,25 +78,9 @@ where
         self.step.outcome(output)
     }
     fn run(&self, input: I, execution: &ExecutionContext) -> Result<O> {
-        for (index, hook) in self.hooks.hooks.iter().enumerate() {
-            hook.before(&input, execution).map_err(|error| {
-                error.context(format!(
-                    "{} before hook {} at index {index}",
-                    self.id(),
-                    hook.id()
-                ))
-            })?;
-        }
+        self.hooks.before(&input, execution, self.id())?;
         let output = self.step.run(input, execution)?;
-        for (index, hook) in self.hooks.hooks.iter().enumerate() {
-            hook.after(&output, execution).map_err(|error| {
-                error.context(format!(
-                    "{} after hook {} at index {index}",
-                    self.id(),
-                    hook.id()
-                ))
-            })?;
-        }
+        self.hooks.after(&output, execution, self.id())?;
         Ok(output)
     }
 }

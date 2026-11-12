@@ -14,4 +14,5 @@
 - [#13](https://github.com/dblock/rust-crate-release/pull/13): Add scoped global literal and regex Markdown section substitutions with capture references - [@dblock](https://github.com/dblock).
 - [#14](https://github.com/dblock/rust-crate-release/pull/14): Support character classes, ranges, negation, and escaping in semantic release-rule selectors - [@dblock](https://github.com/dblock).
 - [#15](https://github.com/dblock/rust-crate-release/pull/15): Add a changelog-disabled mode with retained numeric or semantic release notes and no changelog file access - [@dblock](https://github.com/dblock).
+- [#16](https://github.com/dblock/rust-crate-release/pull/16): Add typed hooks around authentication, local tagging, and separate development commit/push boundaries - [@dblock](https://github.com/dblock).
 - Your contribution here.
