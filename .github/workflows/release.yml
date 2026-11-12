@@ -26,6 +26,7 @@ on:
         value: ${{ jobs.release.outputs.verification }}
 
 permissions:
+  actions: read
   contents: write
   id-token: write
 

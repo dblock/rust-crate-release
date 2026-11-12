@@ -531,7 +531,7 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn validate_repository(repository: &str) -> Result {
+pub(crate) fn validate_repository(repository: &str) -> Result {
     let invalid = || Error::invalid("GitHub repository must be a literal owner/name");
     let (owner, name) = repository.split_once('/').ok_or_else(invalid)?;
     if owner.is_empty()

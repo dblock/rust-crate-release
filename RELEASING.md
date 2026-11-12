@@ -4,7 +4,7 @@
 
 This is an unpublished `0.1.0` library/CLI with typed numeric/semantic orchestration, reusable/composite Actions, and replaceable providers. [CLI and Configuration](docs/cli.md) documents real commands; [GitHub Actions](docs/actions.md) documents integration. The reusable workflow does not activate this repository's self-release: no credentials, trusted publisher, environment, protection exception, dispatch, or release tag is configured. These instructions do not authorize publication.
 
-The repository's data-only `rcr.toml` selects its actual Intridea changelog and runs workspace tests, full lint, real package/installed-consumer validation, and Node artifact-support tests in both source and next-development validation. GitHub hosting is selected but acquires credentials only during publication, not preparation. This maintenance configuration is not part of the distributed crate and does not activate a workflow or authorize release actions.
+The repository's data-only `rcr.toml` selects its actual Intridea changelog and runs workspace tests, full lint, and real package/installed-consumer validation in both source and next-development validation. Rust Actions tests are included in those checks; no Node/npm installation is needed. GitHub hosting is selected but acquires credentials only during publication, not preparation. This maintenance configuration is not part of the distributed crate and does not activate a workflow or authorize release actions.
 
 ## Validate the Distribution
 
@@ -14,7 +14,6 @@ Run the local checks before committing or pushing release-related changes:
 cargo test --locked --workspace
 cargo xtask lint
 cargo xtask package
-npm --prefix actions test
 ```
 
 The final command builds `target/package/rust-crate-release-0.1.0.crate`, verifies Cargo can compile it, checks archive paths, extracts that actual archive, and runs an isolated dependent program. It never publishes. Inspect the packaged manifest, lockfile, README, license, and changelog before any separately authorized release.
@@ -31,7 +30,7 @@ After a confirmed first release, separately authorize/configure a trusted publis
 
 ## Automated Release Integration
 
-Use the reviewed [reusable/composite integration](docs/actions.md) with manual dispatch, the default branch, a restricted `release` environment, explicit `contents: write`/`id-token: write`, non-canceling concurrency, and durable artifact upload before registry mutation. Pin reusable workflow and tooling refs together. Do not copy a tag-triggered quick-start: release commit/tag creation belongs after archive publication. SDK release refs in the documentation become usable only after their separately authorized tags exist.
+Use the reviewed [reusable/composite integration](docs/actions.md) with manual dispatch, the default branch, a restricted `release` environment, explicit `actions: read`/`contents: write`/`id-token: write`, non-canceling concurrency, and durable artifact upload plus independent remote-byte verification before registry mutation. Pin reusable workflow and tooling refs together. Do not copy a tag-triggered quick-start: release commit/tag creation belongs after archive publication. SDK release refs in the documentation become usable only after their separately authorized tags exist.
 
 Any direct-push release metadata/next-version exception needs explicit setup authorization and verified protection changes. Retain active force-push/deletion protections with no bypass actors; document that removing a PR requirement would permit direct pushes by all writers, not just the release workflow. Ordinary development remains PR-based. No such exception is configured now.
 

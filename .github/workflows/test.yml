@@ -22,10 +22,6 @@ jobs:
     steps:
       - name: Check Out Source
         uses: actions/checkout@v7.0.1
-      - name: Set Up Node
-        uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '26.13.1'
       - name: Set Up Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -43,10 +39,6 @@ jobs:
     steps:
       - name: Check Out Source
         uses: actions/checkout@v7.0.1
-      - name: Set Up Node
-        uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '26.13.1'
       - name: Set Up Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
@@ -68,18 +60,3 @@ jobs:
         with:
           file: target/lcov.info
           format: lcov
-
-  actions:
-    name: Artifact Support
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Out Source
-        uses: actions/checkout@v7.0.1
-      - name: Set Up Node
-        uses: actions/setup-node@v7.1.0
-        with:
-          node-version: '26.13.1'
-      - name: Install Artifact Support
-        run: npm ci --ignore-scripts --prefix actions
-      - name: Test Durable Preservation and Guards
-        run: npm --prefix actions test
