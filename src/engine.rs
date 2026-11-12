@@ -233,20 +233,36 @@ impl ReleaseVerifier for RegistryVerifier {
         artifact: &Artifact,
         publisher: &dyn PackagePublisher,
     ) -> Result<Verification> {
-        assert_artifact(release, artifact)?;
+        self.verify_archive(release.name(), release.version(), artifact, publisher)
+    }
+}
+
+impl RegistryVerifier {
+    /// Verifies an explicit released identity without inspecting a checkout.
+    pub fn verify_archive(
+        &self,
+        name: &str,
+        version: &Version,
+        artifact: &Artifact,
+        publisher: &dyn PackagePublisher,
+    ) -> Result<Verification> {
+        artifact.verify()?;
+        if artifact.name() != name || artifact.version() != version {
+            return Err(Error::invalid(
+                "archive identity differs from explicit release",
+            ));
+        }
         for attempt in 1..=self.attempts {
-            if let Some(published) = publisher.lookup(release.name(), release.version())? {
-                if published.name != release.name()
-                    || &published.version != release.version()
+            if let Some(published) = publisher.lookup(name, version)? {
+                if published.name != name
+                    || &published.version != version
                     || published.checksum != artifact.checksum()
                 {
                     return Err(Error::invalid(
                         "published identity or checksum conflicts with release",
                     ));
                 }
-                if publisher.download(release.name(), release.version())?
-                    != artifact.validated_bytes()?
-                {
+                if publisher.download(name, version)? != artifact.validated_bytes()? {
                     return Err(Error::invalid(
                         "published archive bytes differ from retained release",
                     ));

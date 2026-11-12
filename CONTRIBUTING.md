@@ -23,7 +23,7 @@ cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info
 
 Tests and lint must pass for the exact revision before every push, including PR updates. Run package validation before committing changes to packaging or public entry points. Reuse final check results if the tested content/configuration has not changed; do not repeatedly run full suites during unrelated edits. Run focused tests while debugging, for example `cargo test --locked -p xtask docs::tests`.
 
-The Package command uses `cargo package --locked --allow-dirty` so contributors can validate before committing; this does not authorize releasing a dirty tree. It inspects the archive allowlist, compiles its verified source, and runs an isolated Rust consumer with a path dependency on the extracted archive. Temporary consumers are deleted automatically; `.crate` files remain under ignored `target/package/`. No command above publishes or authenticates.
+The Package command uses `cargo package --locked --allow-dirty` so contributors can validate before committing; this does not authorize releasing a dirty tree. It inspects the archive allowlist, compiles its verified source, runs an isolated Rust consumer, installs the extracted archive's rcr executable, and runs the same real-process fixtures as source tests. Temporary consumers are deleted automatically; `.crate` files remain under ignored `target/package/`. No command above publishes or authenticates.
 
 ## Tests
 
