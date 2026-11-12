@@ -1,14 +1,14 @@
 # GitHub Actions and Trusted Publishing
 
-Use rust-crate-release `v0.1.0` to release your Cargo project from GitHub Actions without storing a crates.io token. This guide uses crate `widget`, repository `acme/widget`, and default branch `main`; replace them with your own values. The crate name, repository name, and workflow filename are separate identities.
+Start with [README Usage](../README.md#usage) for the shortest setup. This guide explains first-time publication, permissions, and troubleshooting. Examples use crate `widget`, repository `acme/widget`, and branch `main`; replace these with yours. You do not need to install rcr locally for Actions.
 
 ## Prepare Your Project
 
-Release one explicitly selected Cargo package with an explicit stable version in `Cargo.toml`. Commit a reviewed `Cargo.lock`, even for a library; generate it with `cargo generate-lockfile` if it is missing. A virtual workspace is not an implicit package selection: use the `manifest` option for a workspace member. Workspace-inherited versions and coordinated multi-crate releases are not supported.
+Your project needs a package version in `Cargo.toml`, a committed `Cargo.lock`, and release notes. Run `cargo generate-lockfile` if the lockfile is missing, including for a library.
 
-No `rcr.toml` is required. The supplied Actions workflow discovers your default branch and GitHub repository from the caller's metadata, creates a GitHub Release with the exact crate archive, and prepares the next patch version. The manifest version is the next numeric release. For example, releasing `0.1.1` leaves `0.1.2` in the development manifest and lockfile.
+No `rcr.toml` is required. rcr discovers your repository and default branch. It publishes the version in `Cargo.toml`, creates a GitHub Release, and prepares the next patch version. For example, releasing `0.1.1` leaves `0.1.2` in the manifest and lockfile.
 
-Use an optional `rcr.toml` only for [custom configuration](cli.md#configuration), such as `github-release = false` to skip GitHub Release creation, `next-version = "disabled"` to skip development preparation, or explicit branch/repository overrides.
+For a workspace member, set `manifest = "path/to/member/Cargo.toml"` in an optional `rcr.toml`. Each release handles one package with its own explicit version; workspace-inherited versions and coordinated multi-crate releases are not supported.
 
 Create `CHANGELOG.md` with meaningful unreleased notes:
 
@@ -22,46 +22,69 @@ Create `CHANGELOG.md` with meaningful unreleased notes:
 - Add widget serialization.
 ```
 
-The default format is Keep a Changelog. Set `changelog-format = "intridea"` in `rcr.toml` for a numeric `X.Y.Z (Next)` section with `- Your contribution here.`, or choose [semantic releases](cli.md#configuration) to generate notes from Conventional Commits. Do not dispatch a numeric release with an empty changelog. Commit the lockfile, notes, workflow, and any optional configuration through your normal review process before releasing.
+Add real notes before each release; an empty `[Unreleased]` section is rejected. See [Changelogs](changelogs.md) for other formats, generated notes, or disabling the file. Merge the lockfile, notes, workflow, and any configuration before releasing.
 
-Default validation runs Cargo formatting, locked tests, and Clippy. Packaging and actual-archive consumers run offline after validation, so dependencies must already be cached; normal test/Clippy builds populate that cache. Custom validators must also restore dependencies and provide any additional tools they need. The [composite action](#custom-jobs-with-the-composite-action) lets you add project-specific setup steps.
+The workflow runs formatting checks, tests, and Clippy before publishing. Projects needing system libraries or other setup steps can use the [composite action](#custom-jobs-with-the-composite-action).
 
 ## Publish a New Crate Once
 
-[crates.io Trusted Publishing](https://crates.io/docs/trusted-publishing) requires an existing published crate and a crates.io owner account. If your crate already exists, skip to GitHub setup; never republish an existing version.
+**Skip this section if you already own a published crate.** [crates.io requires an API token for the first publication](https://crates.io/docs/trusted-publishing). You cannot register a trusted publisher for an unpublished crate; [pending publishers are a future possibility](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html#future-possibilities), not a supported first-time process.
 
-For a new crate, publish its first version locally with rcr and a narrowly scoped crates.io API token. Install `cargo install --locked rust-crate-release --version 0.1.0`, ensure your Git identity and remote-push authentication work, and follow [Local Publication](cli.md#local-publication). Supply `CARGO_REGISTRY_TOKEN` privately only for that local release, then remove it from the environment. If GitHub hosting is enabled, authenticate GitHub separately through `gh auth login` or a private `GH_TOKEN`.
+Use Cargo locally for the one-time bootstrap. Cargo uses credentials saved by `cargo login`, so no local rcr installation or `CARGO_REGISTRY_TOKEN` environment variable is needed. The supplied rcr Actions workflow supports trusted publishing only; do not add a Cargo-token secret to it.
 
-The local release publishes the checked crate, pushes its release commit/tag, and prepares the next development version. Confirm the version on crates.io and the matching `vX.Y.Z` Git tag before configuring trusted publishing. Do not put the bootstrap token in GitHub secrets; automated releases below reject `CARGO_REGISTRY_TOKEN`.
+1. Sign in to crates.io with GitHub and verify your email under [Account Settings](https://crates.io/settings/profile), as described in Cargo's [first-publication prerequisites](https://doc.rust-lang.org/cargo/reference/publishing.html#before-your-first-publish).
+2. Create a short-lived token under [API Tokens](https://crates.io/settings/tokens). Grant `publish-new` for creating the crate and restrict the crate-name pattern to your intended name. Do not share the token or commit it to Git.
+3. Review the intended version and publishing metadata in `Cargo.toml`, and commit it with `Cargo.lock` and the source you intend to publish. From the project root, log in interactively and check the package:
+
+   ```sh
+   cargo login
+   cargo publish --locked --dry-run
+   ```
+
+   Paste the token only at Cargo's prompt. Cargo saves it through its configured credential provider; never put the token in a command, shell history, Git, or GitHub secrets.
+4. Inspect the dry-run result and generated archive, then publish with Cargo's saved credentials:
+
+   ```sh
+   cargo publish --locked
+   cargo logout
+   ```
+
+5. Run `cargo logout` even after failure when credentials are no longer needed, and revoke the token under crates.io **API Tokens**. Confirm whether the version reached crates.io before retrying a failed upload.
+6. Prepare the next version: after publishing `0.1.0`, change `Cargo.toml` to `0.1.1`, run `cargo check` to refresh `Cargo.lock`, add unreleased notes, and commit. Cargo does not do these steps or create Git tags for you. You can optionally tag the original published commit as `v0.1.0`.
+7. Configure trusted publishing below. Subsequent releases use the workflow, not a local token.
 
 ## Configure GitHub
 
-Create a GitHub environment named `release` under your consumer repository's **Settings > Environments**. Restrict its deployment branches to your actual default branch, such as `main`, and add required reviewers if desired. The reusable workflow already selects this environment; you do not add `environment` to the caller job that uses it.
+In your repository's **Settings > Environments**, create `release`. Restrict deployments to your default branch, such as `main`; add required reviewers if desired. The supplied workflow selects this environment for you.
 
-Allow the workflow's ordinary, non-force pushes to the default branch and creation of `vX.Y.Z` tags. rcr publishes the crate, then atomically pushes a release commit/tag and later a next-development commit; it does not open version-update PRs. `contents: write` does not bypass branch rules.
+The workflow pushes a release commit and `vX.Y.Z` tag, then a development commit. It does not open version-update PRs. Check that your repository allows these ordinary, non-force pushes: `contents: write` does not bypass branch or tag rules.
 
-In a no-bypass ruleset setup, a **Require a pull request before merging** rule on the default branch blocks these pushes and must be removed after reviewing that tradeoff. This permits direct pushes by all writers, not just the workflow; keep ordinary development PR-based. Retain active force-push and branch-deletion protections. Required-status, signing, restricted-push, and tag rules must also permit the generated commits and new tags; otherwise publication can succeed before a Git push fails. Do not weaken rules automatically or assume a successful crate upload proves Git completed.
+**If your default branch requires pull requests, the release push will be blocked.** With no bypass actors, that requirement must be removed to use this direct-push workflow. This also allows direct pushes by other writers, not only rcr, so review the tradeoff before adopting it. Keep force-push and deletion protections. Status-check, signing, restricted-push, and tag rules must also allow the generated commits and tags.
+
+Review these settings before publishing: a crate upload can succeed before a blocked Git push fails. rcr does not change repository protections for you.
 
 Ensure organization policies allow this reusable workflow and its actions. No repository Cargo-token secret, personal access token, or `secrets: inherit` setting is needed for the standard setup.
 
 ## Configure the crates.io Publisher
 
-As a crate owner, open your crate's **Settings > Trusted Publishing**, click **Add**, select GitHub, and save these fields:
+On crates.io, open your crate's **Settings**, for example `https://crates.io/crates/widget/settings`. Under **Trusted Publishing**, click **Add**, choose **GitHub**, and fill in:
 
 | Field | Example Value | Meaning |
 | --- | --- | --- |
 | Repository owner | `acme` | Your GitHub user or organization. |
 | Repository name | `widget` | Your consumer repository, not `rust-crate-release`. |
 | Workflow filename | `release.yml` | Your caller file's basename, not its full path. |
-| Environment | `release` | The GitHub environment configured above. |
+| Environment name (optional) | `release` | The GitHub environment configured above; enter it to restrict the publisher to that environment. |
 
-Use your caller repository and workflow even when it invokes the reusable workflow in `dblock/rust-crate-release`. Keep the filename and environment in the saved publisher consistent with the YAML below. Save a separate configuration for each crate you intend to publish; this tool releases only the selected package.
+Click **Add** to save, then check the listed repository, workflow, and environment. You must be a crate owner with a verified email and linked GitHub account. Use `release` for the environment even though the form labels it optional.
 
-rcr requests a GitHub OIDC identity with audience `crates.io`, exchanges it for a short-lived publish token, and revokes that token after the upload attempt. You do not add `rust-lang/crates-io-auth-action`, call `cargo publish`, or pass a token into this workflow. The [official crates.io authentication action](https://github.com/rust-lang/crates-io-auth-action) documents the same exchange, but rcr performs it internally.
+Use **your** repository and `release.yml`, not `dblock/rust-crate-release`. The crate name can differ from the repository name. Each crate needs its own publisher configuration; adding a repository URL to `Cargo.toml` does not register one.
+
+rcr handles authentication automatically using GitHub's identity service (OIDC). It obtains a short-lived crates.io token and revokes it after the upload attempt. Do not add a separate authentication action or pass a Cargo token to the workflow.
 
 ## Add the Release Workflow
 
-Create `.github/workflows/release.yml` in your consumer repository:
+The [README workflow](../README.md#1-add-the-release-workflow) is enough for normal use. To also accept a manually entered version, use this variant at `.github/workflows/release.yml`:
 
 ```yaml
 name: Release
@@ -110,9 +133,15 @@ The equivalent GitHub CLI command is:
 gh workflow run release.yml --repo acme/widget --ref main
 ```
 
-To explicitly select a higher stable release version, use `-f version=0.2.0`. Dispatch is a real release, not a dry run: it can publish, create tags/releases, and push development commits. To check locally without publication, use `rcr prepare`; that still edits, commits, and tags locally.
+To explicitly select a higher stable version with the optional input above, use `-f version=0.2.0`. **Running the workflow publishes a real release**, not a dry run.
 
-Inspect the run's steps and job summary. The order is validation/preparation, exact-archive packaging, durable artifact upload and independent verification, crates.io publication, atomic release push, optional GitHub hosting, next-development validation/push, and explicit-version registry verification. Confirm the released version on crates.io, its matching Git tag, GitHub Release when enabled, and the resulting development version.
+rcr publishes the version in `Cargo.toml`, not a version incremented beforehand. With `0.1.1` in the manifest, it publishes `0.1.1`, creates tag `v0.1.1` and a GitHub Release, then commits and pushes `0.1.2` for development. Check these results in the run summary, on crates.io, and in your repository. For a minor or major release, commit the intended manifest version and updated lockfile before dispatching.
+
+If the run fails, [check for partial success](recovery.md) before trying again. A published crate cannot be overwritten.
+
+### Download and Verify Release Files
+
+The workflow saves the checked archive before publishing and verifies that the uploaded recovery files match. You do not need to manage these files during a normal release.
 
 Recovery files appear as `rcr-release-<run-id>-<attempt>` and final diagnostics as `rcr-diagnostics-<run-id>-<attempt>`. To download the immutable pre-publication snapshot outside your checkout and verify a release independently, replace the example IDs/version:
 
@@ -124,6 +153,20 @@ rcr verify --name widget --release-version 0.1.1 \
 ```
 
 Registry visibility can lag upload acceptance. A `not_visible` verification result is a successful but unverified release outcome; it does not prevent hosting/development or authorize republishing. Run the read-only verification command later. Authentication, transport, metadata, or checksum errors remain failures. See [Diagnostics and Recovery](recovery.md) before retrying partial success; do not blindly dispatch again after a failed push or hosting step.
+
+## Troubleshooting
+
+| Symptom | What to Do |
+| --- | --- |
+| Workflow is skipped | Run it on your default branch using a GitHub-hosted runner. |
+| Authentication fails | Check that the crate exists and its saved publisher matches your repository, `release.yml`, and `release` environment. Confirm `id-token: write`. |
+| Stored-token guard fails | Remove `CARGO_REGISTRY_TOKEN` and any separate authentication action from the job. |
+| Artifact verification fails | Check `actions: read` and the upload step. Do not bypass verification. |
+| Git push fails after publication | Check crates.io and remote tags before retrying; review [branch rules](#configure-github). |
+| Formatting, tests, or packaging fail | Read the failing command's output. Check the lockfile and any required tools or system libraries. |
+| Verification says `not_visible` | Wait, then [verify the released archive](recovery.md#verify-without-publishing); do not upload again. |
+
+The sections below are advanced reference. They are not additional setup steps.
 
 ## Custom Jobs with the Composite Action
 
@@ -165,7 +208,7 @@ jobs:
 
 Insert your additional setup before the final step. The action accepts `root` (default `.`), `config`, and `version`; outputs are `name`, `version`, `archive`, `checksum`, and JSON `verification`. Keep the selected Cargo package inside its Git root and do not leave untracked tooling inside the checkout.
 
-The action installs Rust 1.99.1 and builds the reviewed rcr source. Orchestration, verification, fixtures, and tooling are Rust. Your validators must remain compatible with the selected toolchain; use your own Rust runner when you need custom typed composition.
+The action installs Rust 1.99.1 and builds rcr. Your project must support the selected toolchain. Packaging checks run offline, so custom validators must first cache dependencies and install required tools; normal Cargo test/Clippy runs populate the dependency cache.
 
 ## Preservation and Failure Boundaries
 
@@ -195,16 +238,6 @@ If Rust setup or tool installation fails, an explicit `failure-command` input st
 
 Library `WorkflowObserver::success` runs once after a whole composed workflow succeeds; `failure` remains best-effort and preserves the original error. This is separate from per-step `after`.
 
-## Troubleshooting
-
-| Symptom | Check |
-| --- | --- |
-| Workflow is skipped or the caller guard fails | Dispatch the caller workflow on the actual default branch, on a GitHub-hosted runner. |
-| OIDC token exchange fails | Confirm crate ownership/existence, the saved consumer repository/workflow/environment, and `id-token: write`. |
-| Stored-token guard fails | Remove `CARGO_REGISTRY_TOKEN` from job/environment settings and any separate auth-action step. |
-| Artifact verification fails | Confirm `actions: read`, successful upload, storage availability, and unchanged retained files; do not bypass the check. |
-| Git push fails after publication | Reconcile crates.io and remote refs first; inspect PR/status/signing/tag rules before deliberate recovery. |
-| Validation or offline packaging fails | Review the real validator output, committed lockfile, dependency cache, and required project tools. |
-| Verification says `not_visible` | Wait, then verify the explicit released version/archive; do not upload again. |
+## Validation Limits
 
 Rust tests cover real source/installed commands, isolated Git remotes, simulated publication, and a loopback artifact service. They do not establish live OIDC, GitHub storage behavior, or your repository's permission/protection configuration. A successful real release is the end-to-end confirmation of that setup.

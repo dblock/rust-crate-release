@@ -1,5 +1,28 @@
 # Semantic Release Analysis
 
+## Use Commit Messages to Choose Versions
+
+This is optional. The standard workflow publishes the version in `Cargo.toml`; semantic mode chooses it from [Conventional Commits](https://www.conventionalcommits.org/) and generates release notes.
+
+Add to `rcr.toml`, then use the same release workflow:
+
+```toml
+workflow = "semantic"
+```
+
+| Commit | Version Change |
+| --- | --- |
+| `fix: correct widget serialization` | Patch |
+| `feat: add widget export` | Minor |
+| `feat!: change the widget format` | Major, including from `0.x` |
+| Only documentation or other unrecognized changes | No eligible release; the workflow stops before editing files. |
+
+rcr compares commits with the highest reachable stable `vX.Y.Z` tag. With no previous release tag, the first eligible version is `1.0.0`, regardless of the manifest version. Record the previous published version with its correct Git tag before adopting semantic mode for an existing crate.
+
+Semantic mode creates notes automatically and does not prepare a next development version by default. You can still set `next-version = "patch"` or use an explicit stable version override. The reference below explains customization and validation.
+
+## Rust API
+
 `SemanticRelease` composes separate `CommitAnalyzer`, `SemanticVersionPolicy`, and `SemanticNotes` services. Its `analyze(source_sha, manifest_version, input_override, history)` method consumes immutable supplied history and returns an owned `SemanticDecision`; it neither discovers Git history nor edits files. Git adapters implement `SemanticHistory`, rejecting shallow history and selecting the highest numeric reachable stable `vX.Y.Z` tag, not the lexicographically greatest or nearest tag.
 
 ## Conventional Commits

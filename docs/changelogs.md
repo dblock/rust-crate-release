@@ -1,6 +1,36 @@
 # Changelog Editing
 
-The `Changelog` trait separates pure source transformations from explicit `Path`-based file edits. `release` returns `ChangelogEdit { source, notes }`; `next` prepares development notes. Both validate before writing through `release_file` or `next_file`. Dates are real Gregorian dates supplied by the caller as `YYYY/MM/DD`; prereleases and build metadata are unsupported.
+## Choose a Format
+
+By default, add release notes to `CHANGELOG.md` in Keep a Changelog format:
+
+```markdown
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+
+- Fix widget serialization.
+```
+
+Before each release, replace the empty section with real notes. rcr turns `[Unreleased]` into a dated version heading and starts a fresh `[Unreleased]` section afterward. Empty notes are rejected.
+
+If you use headings such as `## 0.1.1 (Next)` with a `- Your contribution here.` placeholder, set `changelog-format = "intridea"` in `rcr.toml`. To generate notes from commit messages instead, follow [Semantic Releases](semantic.md).
+
+If you do not keep a changelog, use:
+
+```toml
+changelog-format = "disabled"
+```
+
+This leaves any existing changelog untouched and uses `Release X.Y.Z.` as the notes for a numeric release. It does not disable GitHub Releases or the next version bump.
+
+The remaining sections describe the Rust API and detailed editing rules; they are not required for normal setup.
+
+## Rust API
+
+The `Changelog` trait separates source transformations from file edits. `release` returns `ChangelogEdit { source, notes }`; `next` prepares development notes. Both validate before writing through `release_file` or `next_file`. Dates use `YYYY/MM/DD`; prereleases and build metadata are unsupported.
 
 ## Handwritten Changelogs
 

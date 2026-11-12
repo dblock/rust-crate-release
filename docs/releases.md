@@ -2,6 +2,8 @@
 
 The library, [CLI](cli.md), and [GitHub Actions integration](actions.md) use the same typed numeric/semantic release engine. Follow the [trusted-publishing setup](actions.md) for a standard Cargo project; use the Rust API below when you need custom providers, typed hooks, or workflow composition.
 
+For file-editing callbacks, start with [Custom Hooks](#custom-hooks). Provider reference: [Cargo and Registries](cargo.md), [Git Repositories](providers.md), and [GitHub Hosting](hosting.md). [Typed Workflows](workflows.md) covers composing your own steps.
+
 ## Configure Providers
 
 Construct `engine::ReleaseWorkflow::new(repository, package, publisher, store)` with explicit `Arc` providers. Defaults are numeric releases, Keep a Changelog in `CHANGELOG.md`, UTC dates, real Cargo format/test/Clippy validation, next patch development, local execution/preservation, bounded registry verification, and no hosted release.
@@ -51,13 +53,9 @@ Real publication requires separately authorized credentials and remote-write per
 
 `ReleaseHooks` has a typed ordered registry for every step. Before/after hooks receive borrowed input/output and immutable execution snapshots. Both before and after preparation/next hooks may make deliberate source edits: their `Edited`/`NextEdited` output precedes trusted staging, real validation, and commitment. Other phases must not edit source. Validators must not change tracked, staged, or untracked release files; unexpected edits are preserved and rejected before commitment. A disabled host or next-development operation records `Skipped`, including through a hook wrapper.
 
-### Edit a File in a Hook
+## Custom Hooks
 
-Fine-grained `tag: LifecycleHooks<Committed, Committed>` hooks surround local tag creation after archive verification. `authenticate: LifecycleHooks<Preserved, Preserved>` hooks surround the registry credential exchange before upload; they never receive credentials and crates.io skips them when reusing an existing version. An authentication after-hook failure revokes any issued short-lived token without uploading. Custom publishers can override `publish_with_authentication` to identify their own authentication boundary; the default surrounds their no-op authentication.
-
-`commit_next: LifecycleHooks<NextEdited, Development>` and `push_next: LifecycleHooks<Development, Development>` surround the validated development commit and push separately. They do not run when next development is disabled. These observation hooks must not edit source or move refs; only preparation/next edit hooks may edit files. Hook failures preserve existing outputs and stop subsequent mutations, including a failed development commit after-hook stopping the development push.
-
-The [README's runnable example](../README.md#custom-hooks) keeps a `VERSION` file synchronized with the manifest, registers both hook instances, and explains real publication versus preparation only. Add the library as a development dependency and run your own example from the project root, or register those hooks through a [project runner](cli.md#project-runners) selected by stock CLI/Actions configuration.
+Use hooks when you need project-specific work, such as updating a `VERSION` file. For file edits, use `prepare` before publication or `next` after publication; the engine includes those edits in the appropriate validation and commit. Start with the [runnable example](#edit-a-file-in-a-hook) below.
 
 | Hook | Runs | Source Edit Result |
 | --- | --- | --- |
@@ -69,6 +67,103 @@ The [README's runnable example](../README.md#custom-hooks) keeps a `VERSION` fil
 Implement `LifecycleHook<Analyzed, Edited>` for preparation, or `LifecycleHook<Hosted, NextEdited>` for next development, and assign `workflow.hooks.prepare = workflow.hooks.prepare.with(hook)` or the corresponding `next` registry. The type parameters refer to the inner edit operation, not the later staging/commit steps. Read the updated manifest in an after hook when generating version-dependent files, rather than assuming that the released version is still the checkout's current development version.
 
 Next hooks also run when next-development preparation is disabled; check `NextEdited::next_version()` before performing an operation that requires a next version. Hook failures propagate, and recovery may invoke hooks again, so keep edits repeatable and do not move HEAD, stage, or commit inside a hook. Source edits in publication/verification/other phases are not supported.
+
+### Edit a File in a Hook
+
+This example keeps `VERSION` synchronized with `Cargo.toml` before and after publication. It is a standalone local Rust runner. To use the hooks with the standard CLI and Actions workflow instead, register them in a [project runner](cli.md#project-runners) using `cli::main_with`.
+
+Add the library as a development dependency:
+
+```sh
+cargo add --dev rust-crate-release@0.1.0
+```
+
+Create `examples/release.rs`:
+
+```no_run
+use rust_crate_release::{
+    Result,
+    engine::{Analyzed, Edited, Hosted, NextEdited, ReleaseRequest, ReleaseWorkflow},
+    execution::ExecutionContext,
+    git::{Git, ReleaseRepository},
+    hooks::LifecycleHook,
+    package::{CargoPackage, PackageProject},
+    registry::CratesIoPublisher,
+    store::DirectoryReleaseStore,
+};
+use std::{fs, sync::Arc};
+
+struct VersionFile;
+
+impl VersionFile {
+    fn update(&self) -> Result {
+        let package = CargoPackage::new(".")?;
+        fs::write(
+            package.root().join("VERSION"),
+            format!("{}\n", package.metadata()?.version),
+        )?;
+        Ok(())
+    }
+}
+
+impl LifecycleHook<Analyzed, Edited> for VersionFile {
+    fn id(&self) -> &str {
+        "release-version-file"
+    }
+
+    fn after(&self, _: &Edited, _: &ExecutionContext) -> Result {
+        self.update()
+    }
+}
+
+impl LifecycleHook<Hosted, NextEdited> for VersionFile {
+    fn id(&self) -> &str {
+        "development-version-file"
+    }
+
+    fn after(&self, _: &NextEdited, _: &ExecutionContext) -> Result {
+        self.update()
+    }
+}
+
+fn main() -> Result {
+    let repository = Arc::new(Git::new(".", "main", "origin")?);
+    let store = Arc::new(DirectoryReleaseStore::new(
+        repository.artifact_directory()?,
+    )?);
+    let mut workflow = ReleaseWorkflow::new(
+        repository,
+        Arc::new(CargoPackage::new(".")?),
+        Arc::new(CratesIoPublisher::new()?),
+        store,
+    );
+    workflow.hooks.prepare = workflow.hooks.prepare.with(VersionFile);
+    workflow.hooks.next = workflow.hooks.next.with(VersionFile);
+
+    workflow.release(ReleaseRequest::default())?;
+    Ok(())
+}
+```
+
+The `prepare.after` hook runs after the engine updates the release manifest but **before validation, the release commit, packaging, and publication**. The `next.after` hook runs after publication and the release push, once the engine has updated the development manifest; its edits are validated, committed, and pushed in the next-development commit. Both read the current manifest so repeated calls write the same contents. Implement `before` instead of `after` to run before that stage's built-in operation.
+
+Commit the example, dependency/lockfile updates, and meaningful changelog notes. Follow the [local-publication prerequisites](cli.md#local-publication), including `CARGO_REGISTRY_TOKEN` and Git push authentication. From the project root on your clean default branch, run:
+
+```sh
+cargo run --example release
+```
+
+**This publishes and pushes a real release.** Replace `main` in the example if your default branch differs. The runner uses the library defaults: Keep a Changelog, next patch development, and no GitHub Release hosting. It does not read `rcr.toml`. This is a local runner, not a replacement for the [trusted-publishing workflow](actions.md).
+
+The `VERSION` file contains the released version in the release commit/archive and the next version in the development commit. If your manifest has a package `include` allowlist, include `VERSION`. To exercise only preparation without publication or pushing, replace `workflow.release(...)` with `workflow.prepare(...)`; this still edits, validates, commits, and tags locally. Preserve the resulting captured inputs explicitly before a later publication, as shown in [Configure Providers](#configure-providers).
+
+Only preparation and next-development hooks may edit source files. Do not edit source in `publish.after`, `verify.after`, or other late hooks: those cannot change an already-built/published archive and can fail clean-tree checks or leave uncommitted edits. Hook errors stop the workflow; hooks may run again during recovery, so avoid non-idempotent operations such as blindly appending text.
+
+### Observe Authentication and Git Operations
+
+Fine-grained `tag: LifecycleHooks<Committed, Committed>` hooks surround local tag creation after archive verification. `authenticate: LifecycleHooks<Preserved, Preserved>` hooks surround the registry credential exchange before upload; they never receive credentials and crates.io skips them when reusing an existing version. An authentication after-hook failure revokes any issued short-lived token without uploading. Custom publishers can override `publish_with_authentication` to identify their own authentication boundary; the default surrounds their no-op authentication.
+
+`commit_next: LifecycleHooks<NextEdited, Development>` and `push_next: LifecycleHooks<Development, Development>` surround the validated development commit and push separately. They do not run when next development is disabled. These observation hooks must not edit source or move refs. Hook failures stop subsequent mutations, including a failed development commit after-hook stopping the development push.
 
 ## Test a Consumer Release
 

@@ -2,78 +2,71 @@
 
 ## Commands
 
-Install `cargo install --locked rust-crate-release --version 0.1.0` with Rust 1.99.1 or later. To build a reviewed checkout instead, use `cargo install --locked --path .`. `rcr --version` prints the tool version; `--release-version` selects your crate's release version, not the tool version. Every successful operation prints exactly one JSON object to stdout; progress, validators, summaries, and errors use stderr. Exit codes are 0 for success or bounded visibility timeout, 1 for operational failure, and 2 for invalid command syntax.
+For automated releases, start with [README Usage](../README.md#usage); Actions installs rcr for you. This guide is for optional settings and local commands.
+
+To use rcr locally, install it with Rust 1.99.1 or later:
 
 ```sh
-rcr prepare --save-inputs .git/rcr/source-inputs.json
-rcr release --inputs .git/rcr/source-inputs.json
-rcr verify --name example-crate --release-version 0.1.0 --archive .git/rcr/example-crate-0.1.0.crate
+cargo install --locked rust-crate-release --version 0.1.0
 ```
 
-These are real release operations, not dry runs. Preparation edits and validates source, commits, packages, creates a local tag, and retains a bundle; it does not publish, push, create a hosted release, or advance development. Release repeats preparation against actual outputs, preserves the artifact, publishes exact bytes, atomically pushes, optionally hosts and advances development, then verifies. For token-free automated releases, follow [GitHub Actions and Trusted Publishing](actions.md). See [Release Workflows](releases.md) for typed composition.
+| Command | What It Does |
+| --- | --- |
+| `rcr release` | Prepares, publishes, pushes, and prepares the next development version in one invocation. |
+| `rcr prepare` | Prepares locally without publishing or pushing. It still edits files, commits, and creates a tag: it is **not** a read-only dry run. |
+| `rcr verify --name widget --release-version 0.1.1 --archive PATH` | Checks a published version against an archive without changing anything. |
+| `rcr --version` | Prints the installed tool version. |
 
-For example, standalone verification returns:
+Use `--release-version` to select your crate's version, not the tool version. For a first publication with Cargo's saved credentials, follow [First-Time Publication](actions.md#publish-a-new-crate-once).
 
-```json
-{"name":"example-crate","operation":"verify","verification":{"attempts":6,"status":"not_visible"},"version":"0.1.0"}
-```
+Run commands from your project root, or set `--root PATH`. Paths are relative to that root unless absolute. `--config FILE` selects a different configuration file; a missing explicitly selected file is an error. Without it, a missing `rcr.toml` is fine.
 
-Object key order is not a public contract. Workflow phases and configured validation argv execute in their documented order, without sorting or deduplication. Repeated validation commands are intentional and run repeatedly. Paths are filesystem paths relative to `--root`, which defaults to the current directory; absolute paths remain absolute. No source-coordinate or location-unit output exists. `--config` selects a file relative to that root; otherwise an absent `rcr.toml` selects defaults, while a missing explicitly selected file is an error.
-
-`prepare` and `release` accept `--release-version`, optional `--archive`, `--inputs`, and `--save-inputs`. An explicit nonempty archive wins over nonempty `CRATE_ARCHIVE`; empty optional values behave as unset. A supplied invalid archive fails instead of silently rebuilding. Without an override, a matching retained archive is reused before building. Next-development validation always removes inherited `CRATE_ARCHIVE`.
-
-`verify` requires `--name`, `--release-version`, and `--archive`. It reads configuration and the retained archive, queries/downloads that explicit published version, and compares identity, checksum, and bytes. It does not construct a Git repository, discover the current manifest version, write receipts, authenticate for publication, or mutate release outputs. Release-only flags are rejected by the parser.
+For scripts, successful commands print one JSON object to stdout; progress and errors go to stderr. Exit codes are 0 for success (including a bounded registry visibility timeout), 1 for an operational error, and 2 for invalid command syntax. See [Recovery](recovery.md#verify-without-publishing) for interpreting verification results.
 
 ## Local Publication
 
-Run from the root of a clean Git checkout on the default branch, with full history and HEAD matching its remote. Commit a reviewed `Cargo.lock`, meaningful changelog notes, and the intended stable manifest version first. Configure your Git author and push authentication. No `rcr.toml` is required: rcr discovers the default branch from the remote's advertised HEAD and uses remote `origin` unless overridden. It never assumes the currently checked-out branch is the default. If the remote does not advertise a default branch, set `default-branch` explicitly.
+This is an advanced alternative to Actions. Start with a clean, up-to-date default-branch checkout and full Git history. Commit the intended version, `Cargo.lock`, and release notes. Configure Git identity and push authentication, and check that branch/tag rules permit release pushes.
 
-Prepare and inspect the captured release before supplying credentials:
-
-```sh
-rcr prepare --save-inputs .git/rcr/source-inputs.json
-```
-
-Default validation runs formatting, locked tests, and Clippy; packaging also compiles actual-archive consumers. Dependencies must be cached before offline packaging. Inspect the retained `.crate`, Git bundle, changelog, local release commit/tag, and `.git/rcr/release.json`. For linked worktrees, use `git rev-parse --git-path rcr` to locate the metadata directory instead of assuming `.git` is a directory.
-
-Create a narrowly scoped crates.io API token and supply it privately as `CARGO_REGISTRY_TOKEN` in your local shell. rcr does not read tokens saved by `cargo login`; do not put a literal token in commands, shell history, documentation, or Git. For a GitHub remote, also provide GitHub authentication through `gh auth login` or private `GH_TOKEN`/`GITHUB_TOKEN`, or set `github-release = false` to skip hosted releases. Registry authentication and Git/GitHub authentication are separate.
-
-Once ready to publish, run:
+Supply a crates.io token privately as `CARGO_REGISTRY_TOKEN`. Unlike Cargo, rcr does not read credentials saved by `cargo login`: it uploads the archive it checked rather than calling `cargo publish`. For a GitHub remote, also authenticate with `gh auth login` or set `github-release = false` to skip GitHub Releases.
 
 ```sh
-rcr release --inputs .git/rcr/source-inputs.json
+rcr release
 unset CARGO_REGISTRY_TOKEN
 ```
 
-This publishes the exact retained archive, pushes its release commit/tag atomically, hosts the release if configured, validates/pushes the next development version, and verifies the released version. Branch and tag protections must permit those ordinary pushes. Remove the token from your environment even if the command fails; inspect [partial-success recovery](recovery.md) before retrying.
+**This publishes and pushes a real release.** rcr runs formatting, tests, Clippy, and archive checks before publishing, then pushes the release and next-development changes. Remove the token even if the command fails. Never put it in Git, a command, or shell history. Check [partial-success recovery](recovery.md) before retrying.
 
-For a new crate this local publication establishes the version required by crates.io before configuring trusted publishing. For an existing crate, use the [Actions setup](actions.md) to avoid local registry tokens on subsequent releases. Local artifacts alone are not sufficient for GitHub execution: the composite action requires independently verified durable preservation before publication.
+### Inspect Before Publishing
 
-## Captured Source Inputs
+Only split the commands if you want to inspect the prepared release first:
 
-`--save-inputs` atomically writes a private JSON file immediately after source analysis, before preparation edits. It contains immutable source identity/date, the explicit override, and any source-bound semantic decision, never workflow phases or credentials. Existing identical data is reusable; different contents and symbolic-link destinations are rejected. Keep this file under Git metadata or outside the checkout so it does not make the source dirty.
+```sh
+rcr prepare --save-inputs .git/rcr/source-inputs.json
+# Inspect the archive, changelog, and local release commit/tag before continuing.
+rcr release --inputs .git/rcr/source-inputs.json
+```
 
-Separate preparation/publication commands must explicitly pass `--inputs`; ordinary commands never discover or restore diagnostic receipts. An omitted release override is taken from those explicit inputs; a conflicting override fails engine validation. The engine rechecks ancestry, timestamp, identity, tags, and actual outputs. Semantic analysis is not repeated against the newly created tag. Failed validation preserves edits; inspect and explicitly repair/validate/commit the checkout before retrying with reviewed original inputs.
-
-Inside GitHub Actions, source-input transport is bound to the repository, workflow ref, run ID, and attempt. Another run/attempt is rejected; downloaded state is not an automatic recovery mechanism. Fresh dispatches capture their own inputs. [GitHub Actions](actions.md) supplies durable pre-publication uploading; the bare CLI intentionally refuses GitHub publication without independently verified preservation. The hidden `--github-artifact-id` option selects an immutable upload whose real metadata and ZIP contents must match the current run/attempt and retained recovery files; an ID alone never authorizes publication.
-
-The composite action calls the Rust `rcr actions guard`, `rcr actions prepare`, and `rcr actions release` commands. They enforce manual/default-branch hosted OIDC execution, use Git's rcr directory regardless of configured artifact storage, and write single-line outputs to `GITHUB_OUTPUT`. Preparation consumes optional `RCR_CONFIG`/`RCR_VERSION`; release consumes the same explicit saved inputs and `RCR_ARTIFACT_ID` from the intervening standard upload action. Release also honors `RCR_CONFIG`. These commands retain the ordinary one-JSON-object stdout contract.
+The file carries the original source/version between these commands; it is not needed for plain `rcr release`. Artifacts and diagnostics are under Git's private metadata directory. Run `git rev-parse --git-path rcr` to find it, including in linked worktrees.
 
 ## Configuration
 
-`rcr.toml` is optional trusted data, not a dynamically loaded Rust module or shell script. Without it, rcr uses numeric releases, Keep a Changelog notes, standard Cargo validators, and the next patch version. Unknown keys, invalid enums/timezones/retry bounds, empty validation argv, and incompatible workflow/changelog selections fail. Validators execute argv directly, without a shell. Use a project-owned Rust runner for typed hooks or custom providers.
+Create `rcr.toml` at your project root only if you want to change a default. For example, `next-version = "disabled"` stops rcr from advancing the manifest after publication.
 
-`default-branch` overrides discovery. In GitHub Actions, discovery uses `RCR_DEFAULT_BRANCH` supplied from the caller's repository metadata, then `repository.default_branch` in `GITHUB_EVENT_PATH`; otherwise it queries the configured remote's advertised HEAD. Missing or ambiguous remote HEAD fails with instructions to configure an explicit branch, never a guess based on the current checkout.
+| Setting | Use It To |
+| --- | --- |
+| `github-release = false` | Skip GitHub Release creation; still publish to crates.io and push the Git tag. |
+| `next-version = "disabled"` | Leave the manifest at the released version. Select the next version yourself before releasing again. |
+| `changelog-format = "disabled"` | Release without editing a changelog file. |
+| `workflow = "semantic"` | Choose versions and notes from [commit messages](semantic.md). |
+| `manifest = "crates/widget/Cargo.toml"` | Select a workspace member with an explicit version. |
+| `default-branch = "main"` | Override automatic default-branch discovery. |
+| `github-repository = "acme/widget"` | Override automatic GitHub repository discovery. |
 
-GitHub Release hosting is enabled automatically for detected github.com repositories. Repository discovery uses `GITHUB_REPOSITORY` inside github.com Actions, otherwise the configured remote URL; HTTPS, SSH (`git@github.com:owner/name.git` and `ssh://`), and Git URLs are supported. Non-GitHub remotes skip hosting. `github-repository = "owner/repository"` overrides discovery, and `github-release = false` disables hosting even when a repository is detected or configured. Hosted releases require `GITHUB_TOKEN`, `GH_TOKEN`, or local `gh` authentication. No inference changes the crates.io trusted publisher or GitHub protection settings.
+Unknown settings, invalid values, and incompatible changelog/workflow choices are rejected. Validation commands are argument arrays, not shell scripts; use an explicit shell command if you need shell syntax.
 
-## Project Runners
+### Default Settings
 
-A project binary can return `cli::main_with(|workflow| { /* register trusted hooks/providers */ Ok(()) })` from `main`. This retains stock argument parsing, JSON output, configuration, source-input transport, and Actions artifact verification. Library callers can use `cli::run_with(cli, &configure)` directly. The configuration closure survives the internal Actions-to-engine dispatch and runs on each preparation/publication invocation.
-
-Select it with `runner = ["cargo", "run", "--locked", "--quiet", "--example", "release", "--"]` in `rcr.toml`, or supply the same JSON argv through `RCR_RUNNER` or the composite/reusable Action's `runner` input. `rcr prepare` and `rcr release` then delegate directly to that program with all parsed arguments, including immutable inputs and preservation IDs. Environment selection takes precedence over configuration. No shell is involved; the runner must print exactly one JSON result and send progress to stderr. Calling ordinary `cli::run` from a selected runner is rejected to prevent recursion.
-
-Use the [README hook implementations](../README.md#custom-hooks) inside this runner's configuration closure, obtaining the project root from `workflow.components.package.root()`. Do not replace preservation with a successful step flag or weaken the configured validators. Runners are reviewed source code with release authority, not untrusted plugins.
+You do not need to copy these into a file. Set only the values you want to change:
 
 ```toml
 workflow = "numeric"
@@ -97,6 +90,48 @@ These are numeric defaults; branch and repository discovery need no TOML entries
 Numeric changelog formats are `keep-a-changelog` and `intridea`. Optional `placeholder` and `sections` configure Keep a Changelog templates; Intridea accepts a placeholder, defaults to `- Your contribution here.`, and does not accept sections. Semantic mode uses `workflow = "semantic"`, defaults to generated notes and disabled next development, and accepts `changelog-format = "generated"` if explicitly supplied. Either mode accepts `changelog-format = "disabled"` to avoid all changelog file access while retaining numeric fallback or captured semantic release notes. Generated and disabled changelogs reject handwritten template settings.
 
 `next-version` accepts `patch`, `disabled`, or an exact stable increasing SemVer. Explicit release overrides must also be stable; numeric releases cannot decrease the original manifest version. Verification bounds are 1–60 attempts and 0–60 seconds between absence-only retries.
+
+### Repository Discovery
+
+`default-branch` overrides discovery. In GitHub Actions, discovery uses `RCR_DEFAULT_BRANCH` supplied from the caller's repository metadata, then `repository.default_branch` in `GITHUB_EVENT_PATH`; otherwise it queries the configured remote's advertised HEAD. If it cannot find one, set `default-branch` explicitly. rcr never assumes the current branch is the default.
+
+GitHub hosting uses `GITHUB_REPOSITORY` inside github.com Actions, otherwise the configured remote URL. HTTPS, SSH (`git@github.com:owner/name.git` and `ssh://`), and Git URLs are supported. Non-GitHub remotes skip hosting. `github-repository` overrides discovery; `github-release = false` disables hosting even with an explicit repository. GitHub authentication uses `GH_TOKEN`, `GITHUB_TOKEN`, or local `gh` credentials. Discovery does not configure the crates.io publisher or change repository protections.
+
+## Project Runners
+
+Use a project runner only when you need custom Rust hooks or providers. A binary can call `cli::main_with(|workflow| { /* register hooks/providers */ Ok(()) })` from `main`; library callers can use `cli::run_with(cli, &configure)`. This keeps stock parsing, configuration, JSON output, and Actions artifact verification.
+
+Select it in `rcr.toml`:
+
+```toml
+runner = ["cargo", "run", "--locked", "--quiet", "--example", "release", "--"]
+```
+
+Alternatively, supply JSON argv through `RCR_RUNNER` or the Action's `runner` input; environment selection takes precedence. The CLI forwards arguments directly without a shell. The runner must print one JSON result and send progress to stderr. Call `main_with` or `run_with`, not ordinary `cli::run`, to avoid recursive dispatch. The configuration closure also runs during Actions preparation/publication.
+
+Use the [custom hook implementations](releases.md#edit-a-file-in-a-hook) inside the configuration closure, obtaining the root from `workflow.components.package.root()`. Runners are trusted source code with release authority; do not remove artifact checks or weaken validators.
+
+## Advanced Command Reference
+
+To install a reviewed checkout instead of a published crate, use `cargo install --locked --path .`.
+
+`prepare` and `release` accept `--release-version`, optional `--archive`, `--inputs`, and `--save-inputs`. An explicit nonempty archive wins over nonempty `CRATE_ARCHIVE`; empty values behave as unset. An invalid archive fails instead of silently rebuilding. Otherwise a matching retained archive is reused before building. Next-development validation removes inherited `CRATE_ARCHIVE`.
+
+`verify` requires `--name`, `--release-version`, and `--archive`. It compares that explicit identity and archive with registry metadata and downloaded bytes. It needs no Git repository or current manifest, writes no receipts, and does not authenticate for publication. Release-only flags are rejected.
+
+JSON key order is not guaranteed. Workflow phases and validation commands run in their configured order; repeated commands are not deduplicated.
+
+## Captured Source Inputs
+
+These are only needed when deliberately splitting preparation and publication; Actions manages them for you.
+
+`--save-inputs` writes the original source/version to a private JSON file before preparation edits. It contains source identity/date, any explicit override, and semantic decisions, never credentials or workflow progress. Keep it under Git metadata or outside the checkout. Identical existing data is reusable; conflicting contents or symbolic-link destinations are rejected.
+
+Pass the same file with `--inputs` for publication. rcr rechecks source ancestry, timestamp, identity, tags, and actual outputs; it does not restore progress from a receipt or reanalyze semantic commits against a newly created tag. A conflicting version override fails. Failed validation leaves edits for inspection and deliberate repair.
+
+In Actions, inputs are bound to repository/workflow/run/attempt. A new run or attempt cannot automatically resume an old file. The hidden `--github-artifact-id` selects a stored upload whose metadata and bytes must match before publication; an ID or successful upload step alone is not proof.
+
+The composite action calls `rcr actions guard`, `prepare`, and `release` internally. They require manual/default-branch hosted execution, use Git's rcr directory, and write outputs to `GITHUB_OUTPUT`. They honor `RCR_CONFIG`; preparation also reads `RCR_VERSION`, and release reads `RCR_ARTIFACT_ID` and the saved inputs. Use the supplied Actions integration rather than assembling these internal commands yourself.
 
 ## Isolated Tests
 

@@ -1,5 +1,31 @@
 # Diagnostics and Recovery
 
+## If a Release Fails
+
+**Do not immediately run it again.** The crate may already be published even if a later Git push or GitHub Release step failed.
+
+1. Read the failed step and run summary in GitHub Actions.
+2. Check whether the version appears on crates.io. A timeout does not mean the upload was rejected.
+3. Check your repository for the matching `vX.Y.Z` tag, GitHub Release, and next-development commit.
+4. Download the run's release files and diagnostics using the [Actions guide](actions.md#download-and-verify-release-files). Keep them outside your checkout, and do not overwrite or delete the original evidence.
+
+Fix the reported problem before choosing a recovery action. Do not delete published tags, force-push, discard local edits, or upload the same version again to make a run appear successful. The advanced sections below explain how rcr checks existing outputs.
+
+## Verify Without Publishing
+
+If publication was accepted but registry verification timed out, run this read-only check later. Install the [CLI](cli.md#commands), then replace the name, version, and archive path with those from the failed run:
+
+```sh
+rcr verify --name widget --release-version 0.1.1 \
+  --archive ../widget-release-artifacts/widget-0.1.1.crate
+```
+
+This checks the released version, not the version now in `Cargo.toml`. It does not publish, push, or edit anything. A `not_visible` result means the version cannot yet be confirmed; verify again later rather than publishing again. Network, authentication, and checksum errors remain failures.
+
+## Advanced Recovery Reference
+
+The files below help diagnose what happened. They are not instructions to skip steps or proof that a release succeeded.
+
 ## Retain Evidence
 
 `ReleaseStore` separates filesystem diagnostics from registry, Git, and hosting providers. `DirectoryReleaseStore` atomically replaces `release.json` inside an explicitly selected directory, using a private temporary file and private file permissions on Unix. Other retained files are preserved. Git's default artifact directory is private repository metadata, not a tracked source directory.
@@ -21,16 +47,5 @@ Inspect the retained archive/bundle, registry version metadata, remote release t
 `rcr release --inputs PATH` reconciles actual outputs using the deliberately supplied original source inputs; it is not an automatic receipt-restoration command. The source, archive, registry, and refs must still satisfy the engine's guards. Failed source or next-development validation leaves edits intact for inspection and deliberate repair; never reset them away just to make a retry pass.
 
 GitHub source inputs are bound to repository/workflow/run/attempt. A new dispatch or attempt captures its own inputs and cannot automatically resume an earlier attempt's downloaded file. Do not blindly start another release after crates.io accepted a version but a push or hosting step failed. Inspect which version was accepted and which outputs are missing before choosing a controlled same-attempt retry or deliberate operator recovery.
-
-## Verify Without Publishing
-
-`rcr verify` compares an explicit released name/version with a retained archive, independent of the current manifest version or HEAD:
-
-```sh
-rcr verify --name widget --release-version 0.1.1 \
-  --archive ../widget-release-artifacts/widget-0.1.1.crate
-```
-
-The command is read-only: it does not publish, push, create hosted assets, edit the checkout, or update receipts. A bounded `not_visible` result means the released version could not yet be confirmed; run verification again later rather than publishing again. Authentication, network, malformed metadata, identity, and checksum errors remain failures.
 
 In Actions, download the immutable `rcr-release-<run-id>-<attempt>` snapshot and final `rcr-diagnostics-<run-id>-<attempt>` outside your checkout. The former contains the verified pre-publication crate, Git recovery bundle, and source inputs; final diagnostics may record a later phase or error. Neither archive's receipt authorizes skipping work. [GitHub Actions and Trusted Publishing](actions.md#run-and-verify-a-release) shows download commands and setup checks.

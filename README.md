@@ -5,19 +5,13 @@
 
 [![Test](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml) [![Lint](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml) [![Package](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml)
 
-Release Rust crates to crates.io with trusted publishing, checked archives, changelogs, Git tags, and GitHub Releases. Use the built-in rcr CLI and GitHub Actions workflow, or compose typed release workflows in Rust. Ported from [ruby-gem-release](https://github.com/dblock/ruby-gem-release) and [npm-package-release](https://github.com/dblock/npm-package-release).
-
-## Installation
-
-For local commands, install rcr with Rust 1.99.1 or later:
-
-```sh
-cargo install --locked rust-crate-release --version 0.1.0
-```
-
-The GitHub Actions workflow installs the tool itself; no local installation is required to use it.
+Release your Rust crate from GitHub Actions. rcr tests your project, publishes to crates.io, updates the changelog, creates a Git tag and GitHub Release, and prepares the next version. Ported from [ruby-gem-release](https://github.com/dblock/ruby-gem-release) and [npm-package-release](https://github.com/dblock/npm-package-release).
 
 ## Usage
+
+You need a Cargo project on GitHub. No local rcr installation or `rcr.toml` is required. Set up the workflow and trusted publisher once; after that, update your release notes and run the workflow.
+
+### 1. Add the Release Workflow
 
 Add `.github/workflows/release.yml` to your Cargo project:
 
@@ -39,21 +33,80 @@ jobs:
       tool-ref: v0.1.0
 ```
 
-Complete the [trusted-publishing setup](docs/actions.md): publish your crate's first version if needed, configure its crates.io publisher for your repository's `release.yml` and `release` environment, and allow the workflow's release commits and tags. Then run the Release workflow on your default branch. Do not store a Cargo token secret or add a separate authentication action; rcr exchanges OIDC credentials itself.
+Commit this file and `Cargo.lock` to your default branch, even for a library. The workflow installs rcr and Rust for you.
 
-Each release validates the project and the actual `.crate`, durably preserves recovery files, publishes those exact bytes, pushes the release commit/tag, optionally creates a GitHub Release, and prepares the next development version. A failed preservation check prevents publication.
+### 2. First-Time Release
 
-To prepare locally without publishing or pushing:
+**Skip this step if your crate is already on crates.io.** crates.io requires the first publication to use an API token; trusted publishing works for subsequent versions.
+
+Sign in to crates.io, verify your email, and create a short-lived [API token](https://crates.io/settings/tokens) with `publish-new` permission restricted to your crate name. Commit the intended `Cargo.toml` version and `Cargo.lock`. From your project root, authenticate interactively and publish:
 
 ```sh
-rcr prepare --save-inputs .git/rcr/source-inputs.json
+cargo login
+cargo publish --locked
+cargo logout
 ```
 
-Preparation still edits, validates, commits, and tags locally; it is not a read-only dry run. See [CLI and Configuration](docs/cli.md) for local publication and verification commands.
+Paste the token at Cargo's prompt, never into a command or GitHub secret. **This publishes your crate.** Confirm it on crates.io and revoke the token. Cargo does not increment the version: if you published `0.1.0`, change `Cargo.toml` to `0.1.1`, run `cargo check` to refresh `Cargo.lock`, and commit both before your first workflow release. See [First-Time Publication](docs/actions.md#publish-a-new-crate-once) for the full procedure.
+
+### 3. Configure Trusted Publishing
+
+In your GitHub repository's **Settings > Environments**, create `release` and allow deployments from your default branch. On crates.io, open your crate's **Settings > Trusted Publishing**, click **Add**, select **GitHub**, and enter:
+
+| Field | Value |
+| --- | --- |
+| Repository owner | Your GitHub user or organization, for example `acme`. |
+| Repository name | Your project's repository, for example `widget`. |
+| Workflow filename | `release.yml` |
+| Environment name (optional) | `release` |
+
+Click **Add** to save. Enter `release` even though crates.io labels the environment optional. No Cargo-token secret or extra authentication action is needed.
+
+The workflow must be allowed to push commits to your default branch and create `vX.Y.Z` tags. **A rule requiring pull requests blocks these pushes**, even with `contents: write`. Review [branch-protection requirements](docs/actions.md#configure-github) before releasing; publication can succeed before a blocked push fails.
+
+### 4. Update Changelog
+
+If you keep a changelog, add meaningful release notes to the `[Unreleased]` section of `CHANGELOG.md` before each release:
+
+```markdown
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Add widget serialization.
+```
+
+Use this Keep a Changelog format by default. rcr gives the notes a version and date, then creates a fresh `[Unreleased]` section for your next changes. Other formats and generated notes are covered in [Changelogs](docs/changelogs.md).
+
+If you do not keep a changelog, disable file updates in `rcr.toml`:
+
+```toml
+changelog-format = "disabled"
+```
+
+### 5. Run a Release
+
+Merge your release notes onto the default branch. On GitHub, select **Actions > Release > Run workflow**, choose the default branch, and click **Run workflow**.
+
+Alternatively, dispatch with the GitHub CLI, replacing the repository and branch with yours:
+
+```sh
+gh workflow run release.yml --repo acme/widget --ref main
+```
+
+**This publishes the version in `Cargo.toml`.** For example, with `0.1.1` in the manifest, rcr publishes `0.1.1`, pushes tag `v0.1.1`, creates a GitHub Release, then commits and pushes `0.1.2` for development. To make a minor or major release instead, change the manifest version and refresh `Cargo.lock` before running the workflow.
+
+Check the run's summary and your crate on crates.io. If a release fails, [check what completed before retrying](docs/recovery.md); a failed workflow may already have published the version.
+
+### Advanced Usage
+
+For custom before/after release behavior, including editing files, see [Custom Hooks](docs/releases.md#custom-hooks). Use [CLI and Configuration](docs/cli.md) for local commands and overrides, or [Semantic Releases](docs/semantic.md) to choose versions from commit messages.
 
 ## Configuration
 
-No `rcr.toml` is required for a standard release. rcr infers the default branch from GitHub Actions metadata or the Git remote's HEAD, and the GitHub repository from Actions metadata or the configured remote URL. GitHub Releases are created automatically when a GitHub repository is detected.
+`rcr.toml` is optional. rcr discovers your default branch and GitHub repository automatically.
 
 Create `rcr.toml` only to override defaults. For example, to skip GitHub Release creation and next-development preparation:
 
@@ -62,102 +115,11 @@ github-release = false
 next-version = "disabled"
 ```
 
-Numeric releases use the manifest version, `CHANGELOG.md` with a meaningful `[Unreleased]` section, and a next patch version by default. Keep `Cargo.lock` committed. [CLI and Configuration](docs/cli.md) covers optional branch/repository overrides, changelog formats, semantic releases, validation commands, and version policies. Use the [Rust library](docs/releases.md) from your own runner for custom typed components, hooks, and observers.
-
-## Custom Hooks
-
-For example, keep a `VERSION` file synchronized with `Cargo.toml`: write the release version before publishing, then the next development version after publishing. Hooks are Rust code registered in your own runner. The example below constructs the engine directly; [project runners](docs/cli.md#project-runners) using `cli::main_with` let `rcr.toml`, the installed rcr command, and the supplied Actions workflow select the same custom hooks.
-
-Add the library as a development dependency:
-
-```sh
-cargo add --dev rust-crate-release@0.1.0
-```
-
-Create `examples/release.rs`:
-
-```no_run
-use rust_crate_release::{
-    Result,
-    engine::{Analyzed, Edited, Hosted, NextEdited, ReleaseRequest, ReleaseWorkflow},
-    execution::ExecutionContext,
-    git::{Git, ReleaseRepository},
-    hooks::LifecycleHook,
-    package::{CargoPackage, PackageProject},
-    registry::CratesIoPublisher,
-    store::DirectoryReleaseStore,
-};
-use std::{fs, sync::Arc};
-
-struct VersionFile;
-
-impl VersionFile {
-    fn update(&self) -> Result {
-        let package = CargoPackage::new(".")?;
-        fs::write(
-            package.root().join("VERSION"),
-            format!("{}\n", package.metadata()?.version),
-        )?;
-        Ok(())
-    }
-}
-
-impl LifecycleHook<Analyzed, Edited> for VersionFile {
-    fn id(&self) -> &str {
-        "release-version-file"
-    }
-
-    fn after(&self, _: &Edited, _: &ExecutionContext) -> Result {
-        self.update()
-    }
-}
-
-impl LifecycleHook<Hosted, NextEdited> for VersionFile {
-    fn id(&self) -> &str {
-        "development-version-file"
-    }
-
-    fn after(&self, _: &NextEdited, _: &ExecutionContext) -> Result {
-        self.update()
-    }
-}
-
-fn main() -> Result {
-    let repository = Arc::new(Git::new(".", "main", "origin")?);
-    let store = Arc::new(DirectoryReleaseStore::new(
-        repository.artifact_directory()?,
-    )?);
-    let mut workflow = ReleaseWorkflow::new(
-        repository,
-        Arc::new(CargoPackage::new(".")?),
-        Arc::new(CratesIoPublisher::new()?),
-        store,
-    );
-    workflow.hooks.prepare = workflow.hooks.prepare.with(VersionFile);
-    workflow.hooks.next = workflow.hooks.next.with(VersionFile);
-
-    workflow.release(ReleaseRequest::default())?;
-    Ok(())
-}
-```
-
-The `prepare.after` hook runs after the engine updates the release manifest but **before validation, the release commit, packaging, and publication**. The `next.after` hook runs after publication and the release push, once the engine has updated the development manifest; its edits are validated, committed, and pushed in the next-development commit. Both read the current manifest so repeated calls write the same contents. Implement `before` instead of `after` to run before that stage's built-in operation.
-
-Commit the example, dependency/lockfile updates, and meaningful changelog notes. Follow the [local-publication prerequisites](docs/cli.md#local-publication), including `CARGO_REGISTRY_TOKEN` and Git push authentication. From the project root on your clean default branch, run:
-
-```sh
-cargo run --example release
-```
-
-**This publishes and pushes a real release.** Replace `main` in the example if your default branch differs. The runner uses the library defaults: Keep a Changelog, next patch development, and no GitHub Release hosting. It does not read `rcr.toml`. This is a local runner, not a replacement for the trusted-publishing workflow above.
-
-The `VERSION` file contains the released version in the release commit/archive and the next version in the development commit. If your manifest has a package `include` allowlist, include `VERSION`. To exercise only preparation without publication or pushing, replace `workflow.release(...)` with `workflow.prepare(...)`; this still edits, validates, commits, and tags locally. Preserve the resulting captured inputs explicitly before a later publication, as shown in [Release Workflows](docs/releases.md#configure-providers).
-
-Only preparation and next-development hooks may edit source files. Do not edit source in `publish.after`, `verify.after`, or other late hooks: those cannot change an already-built/published archive and can fail clean-tree checks or leave uncommitted edits. Hook errors stop the workflow; hooks may run again during recovery, so avoid non-idempotent operations such as blindly appending text. See [Release Workflows](docs/releases.md) for all hook stages and provider options.
+See [CLI and Configuration](docs/cli.md#configuration) for all settings.
 
 ## Contributing
 
-Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [CLI and Configuration](docs/cli.md), [GitHub Actions](docs/actions.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), [Semantic Releases](docs/semantic.md), [Cargo Providers](docs/cargo.md), [Release Providers](docs/providers.md), [GitHub Hosting](docs/hosting.md), [Release Workflows](docs/releases.md), and [Diagnostics and Recovery](docs/recovery.md).
+See [Contributing](CONTRIBUTING.md) for development and tests, [Design](DESIGN.md) for architecture, and [Changelog](CHANGELOG.md) for project changes.
 
 ## License
 
