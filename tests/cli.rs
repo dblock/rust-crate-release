@@ -170,6 +170,8 @@ fn main() -> std::process::ExitCode {
     let result = Command::new(env!("CARGO_BIN_EXE_rcr"))
         .current_dir(fixture_project.root())
         .env_remove("RCR_RUNNER")
+        .env_remove("RCR_RUNNER_ACTIVE")
+        .env_remove("RCR_CONFIG")
         .env_remove("GITHUB_ACTIONS")
         .args(["prepare", "--save-inputs", ".git/project-inputs.json"])
         .output()?;

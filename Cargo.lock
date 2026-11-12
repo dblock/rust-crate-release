@@ -2086,6 +2086,7 @@ version = "0.0.0"
 dependencies = [
  "flate2",
  "pulldown-cmark",
+ "regex",
  "rust-crate-release",
  "serde_json",
  "tar",

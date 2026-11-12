@@ -432,6 +432,7 @@ impl ReleaseFixture {
             .env_remove("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
             .env_remove("ACTIONS_ID_TOKEN_REQUEST_URL")
             .env_remove("RCR_RUNNER")
+            .env_remove("RCR_CONFIG")
             .env_remove("RCR_RUNNER_ACTIVE");
         for key in [
             "RCR_PREPARE_COMMAND",

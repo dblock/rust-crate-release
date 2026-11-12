@@ -19,4 +19,5 @@
 - [#18](https://github.com/dblock/rust-crate-release/pull/18): Add terminal success/failure callbacks and credential-free actual Actions step/run context, including external setup failures - [@dblock](https://github.com/dblock).
 - [#19](https://github.com/dblock/rust-crate-release/pull/19): Configure Actions toolchains, Git identity, and trusted phase commands with exact-byte publication verification - [@dblock](https://github.com/dblock).
 - [#20](https://github.com/dblock/rust-crate-release/pull/20): Add a configured consumer release-testing facade with isolated registry/hosting, project runners, and exact remote-file assertions - [@dblock](https://github.com/dblock).
+- [#21](https://github.com/dblock/rust-crate-release/pull/21): Add a manual SDK self-release caller and source-owned runner maintaining released documentation pins in the next-development commit - [@dblock](https://github.com/dblock).
 - Your contribution here.

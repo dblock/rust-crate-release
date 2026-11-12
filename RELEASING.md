@@ -20,7 +20,7 @@ cargo xtask package
 
 Package validation builds `target/package/rust-crate-release-<version>.crate`, checks its paths and allowlist, verifies Cargo compilation, and runs an extracted-library consumer and the installed executable's shared real-process fixtures. It does not publish. Inspect the archive's normalized manifest, lockfile, README, license, changelog, and shipped action/workflow before release.
 
-The root `rcr.toml` selects this repository's Intridea changelog, GitHub hosting, workspace tests, full lint, and real package/consumer validation. Those commands also run during next-development validation. This maintenance configuration is excluded from the distributed crate; consumers provide their own configuration.
+The root `rcr.toml` selects this repository's Intridea changelog, GitHub hosting, workspace tests, full lint, real package/consumer validation, and source-owned `rcr-release` runner. Those commands also run during next-development validation. The runner updates README and usage-document installation/action pins to the released version, not the next manifest version, in the validated next-development commit after publication. It leaves consuming-crate example versions unchanged and does not invent an unreleased tag. This maintenance configuration and runner are excluded from the distributed crate; consumers provide their own configuration.
 
 ## Publish Locally
 
@@ -46,13 +46,13 @@ Remove the token even after a failure, and reconcile actual outputs before retry
 
 ## Configure Trusted Publishing
 
-After the crate exists on crates.io, follow the [consumer setup guide](docs/actions.md) for the `release` environment, compatible branch/tag rules, a per-crate trusted publisher, and a manually dispatched caller workflow. For this repository, publisher identity uses owner `dblock`, repository `rust-crate-release`, the actual caller workflow filename, and environment `release`. The reusable `.github/workflows/release.yml` is a `workflow_call` implementation, not a dispatchable self-release caller.
+After the crate exists on crates.io, follow the [consumer setup guide](docs/actions.md) for the `release` environment, compatible branch/tag rules, and a per-crate trusted publisher. For this repository, publisher identity uses owner `dblock`, repository `rust-crate-release`, caller workflow `publish.yml`, and environment `release`. The manual [Publish workflow](.github/workflows/publish.yml) invokes the local reusable release workflow with `tool-ref: github.sha`, so the tool and project runner come from the reviewed dispatched commit rather than a moving external ref. Only dispatch it separately after authorizing a real release and confirming the external settings.
 
 The caller needs `actions: read`, `contents: write`, and `id-token: write`. rcr performs the OIDC exchange and short-lived token cleanup itself; do not add a separate authentication action or set `CARGO_REGISTRY_TOKEN` in the automated job. Pin the caller's reusable-workflow and `tool-ref` references together.
 
 Review protection changes separately. Release automation needs direct pushes of release metadata and the next development version, not PRs for those commits. Removing a PR requirement permits direct pushes by all writers, not just automation; ordinary development remains PR-based. Retain active force-push and deletion protections with no bypass actors.
 
-Configuration alone does not prove a trusted release works. Read back the saved publisher/environment/permissions and confirm them through a separately authorized real release. Documentation changes do not activate self-release or configure these external settings.
+Configuration alone does not prove a trusted release works. Read back the saved publisher/environment/permissions and confirm them through a separately authorized real release. The manual caller and runner do not configure external settings or bypass protections, and must not be dispatched merely to test these instructions.
 
 ## Confirm and Recover
 
