@@ -329,7 +329,7 @@ impl ReleaseFixture {
                 &["remote", "rename", "origin", &config.remote],
             )?;
         }
-        if config.default_branch != "master" {
+        if !config.default_branch.is_empty() && config.default_branch != "master" {
             command::run(
                 project.root(),
                 "git",

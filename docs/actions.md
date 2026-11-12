@@ -6,16 +6,9 @@ Use rust-crate-release `v0.1.0` to release your Cargo project from GitHub Action
 
 Release one explicitly selected Cargo package with an explicit stable version in `Cargo.toml`. Commit a reviewed `Cargo.lock`, even for a library; generate it with `cargo generate-lockfile` if it is missing. A virtual workspace is not an implicit package selection: use the `manifest` option for a workspace member. Workspace-inherited versions and coordinated multi-crate releases are not supported.
 
-Add `rcr.toml` at the repository root:
+No `rcr.toml` is required. The supplied Actions workflow discovers your default branch and GitHub repository from the caller's metadata, creates a GitHub Release with the exact crate archive, and prepares the next patch version. The manifest version is the next numeric release. For example, releasing `0.1.1` leaves `0.1.2` in the development manifest and lockfile.
 
-```toml
-default-branch = "main"
-github-repository = "acme/widget"
-changelog-format = "keep-a-changelog"
-next-version = "patch"
-```
-
-Set `default-branch` to the actual default branch, not necessarily `main`; the default when omitted is `master`. `github-repository` enables GitHub Release creation and attaches the exact crate archive; omit it to publish only to crates.io and Git. The manifest version is the next numeric release, and the default next-development policy increments its patch. For example, releasing `0.1.1` leaves `0.1.2` in the development manifest and lockfile.
+Use an optional `rcr.toml` only for [custom configuration](cli.md#configuration), such as `github-release = false` to skip GitHub Release creation, `next-version = "disabled"` to skip development preparation, or explicit branch/repository overrides.
 
 Create `CHANGELOG.md` with meaningful unreleased notes:
 
@@ -29,7 +22,7 @@ Create `CHANGELOG.md` with meaningful unreleased notes:
 - Add widget serialization.
 ```
 
-Use `changelog-format = "intridea"` for a numeric `X.Y.Z (Next)` section with `- Your contribution here.`, or choose [semantic releases](cli.md#configuration) to generate notes from Conventional Commits. Do not dispatch a numeric release with an empty changelog. Commit the configuration, lockfile, notes, and workflow through your normal review process before releasing.
+The default format is Keep a Changelog. Set `changelog-format = "intridea"` in `rcr.toml` for a numeric `X.Y.Z (Next)` section with `- Your contribution here.`, or choose [semantic releases](cli.md#configuration) to generate notes from Conventional Commits. Do not dispatch a numeric release with an empty changelog. Commit the lockfile, notes, workflow, and any optional configuration through your normal review process before releasing.
 
 Default validation runs Cargo formatting, locked tests, and Clippy. Packaging and actual-archive consumers run offline after validation, so dependencies must already be cached; normal test/Clippy builds populate that cache. Custom validators must also restore dependencies and provide any additional tools they need. The [composite action](#custom-jobs-with-the-composite-action) lets you add project-specific setup steps.
 
@@ -105,7 +98,7 @@ The reusable workflow supplies an Ubuntu GitHub-hosted runner, full-history cons
 | `contents: write` | Push release/development commits and tags, and create GitHub Releases when enabled. |
 | `id-token: write` | Request the OIDC identity accepted by the crates.io publisher. |
 
-Merge the caller workflow and configuration onto the default branch. Do not use a tag-push trigger: rcr creates the release tag after crate publication.
+Merge the caller workflow and any optional configuration onto the default branch. Do not use a tag-push trigger: rcr creates the release tag after crate publication.
 
 ## Run and Verify a Release
 

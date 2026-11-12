@@ -26,7 +26,7 @@ Object key order is not a public contract. Workflow phases and configured valida
 
 ## Local Publication
 
-Run from the root of a clean Git checkout on the configured default branch, with full history and HEAD matching its remote. Commit a reviewed `Cargo.lock`, meaningful changelog notes, and the intended stable manifest version first. Configure your Git author and push authentication. `rcr.toml` defaults to branch `master` and remote `origin`; set `default-branch` for projects using another branch.
+Run from the root of a clean Git checkout on the default branch, with full history and HEAD matching its remote. Commit a reviewed `Cargo.lock`, meaningful changelog notes, and the intended stable manifest version first. Configure your Git author and push authentication. No `rcr.toml` is required: rcr discovers the default branch from the remote's advertised HEAD and uses remote `origin` unless overridden. It never assumes the currently checked-out branch is the default. If the remote does not advertise a default branch, set `default-branch` explicitly.
 
 Prepare and inspect the captured release before supplying credentials:
 
@@ -36,7 +36,7 @@ rcr prepare --save-inputs .git/rcr/source-inputs.json
 
 Default validation runs formatting, locked tests, and Clippy; packaging also compiles actual-archive consumers. Dependencies must be cached before offline packaging. Inspect the retained `.crate`, Git bundle, changelog, local release commit/tag, and `.git/rcr/release.json`. For linked worktrees, use `git rev-parse --git-path rcr` to locate the metadata directory instead of assuming `.git` is a directory.
 
-Create a narrowly scoped crates.io API token and supply it privately as `CARGO_REGISTRY_TOKEN` in your local shell. rcr does not read tokens saved by `cargo login`; do not put a literal token in commands, shell history, documentation, or Git. If `github-repository` is set, also provide GitHub authentication through `gh auth login` or private `GH_TOKEN`/`GITHUB_TOKEN`. Registry authentication and Git/GitHub authentication are separate.
+Create a narrowly scoped crates.io API token and supply it privately as `CARGO_REGISTRY_TOKEN` in your local shell. rcr does not read tokens saved by `cargo login`; do not put a literal token in commands, shell history, documentation, or Git. For a GitHub remote, also provide GitHub authentication through `gh auth login` or private `GH_TOKEN`/`GITHUB_TOKEN`, or set `github-release = false` to skip hosted releases. Registry authentication and Git/GitHub authentication are separate.
 
 Once ready to publish, run:
 
@@ -61,7 +61,11 @@ The composite action calls the Rust `rcr actions guard`, `rcr actions prepare`, 
 
 ## Configuration
 
-`rcr.toml` is trusted data, not a dynamically loaded Rust module or shell script. Unknown keys, invalid enums/timezones/retry bounds, empty validation argv, and incompatible workflow/changelog selections fail. Validators execute argv directly, without a shell. Use a project-owned Rust runner for typed hooks or custom providers.
+`rcr.toml` is optional trusted data, not a dynamically loaded Rust module or shell script. Without it, rcr uses numeric releases, Keep a Changelog notes, standard Cargo validators, and the next patch version. Unknown keys, invalid enums/timezones/retry bounds, empty validation argv, and incompatible workflow/changelog selections fail. Validators execute argv directly, without a shell. Use a project-owned Rust runner for typed hooks or custom providers.
+
+`default-branch` overrides discovery. In GitHub Actions, discovery uses `RCR_DEFAULT_BRANCH` supplied from the caller's repository metadata, then `repository.default_branch` in `GITHUB_EVENT_PATH`; otherwise it queries the configured remote's advertised HEAD. Missing or ambiguous remote HEAD fails with instructions to configure an explicit branch, never a guess based on the current checkout.
+
+GitHub Release hosting is enabled automatically for detected github.com repositories. Repository discovery uses `GITHUB_REPOSITORY` inside github.com Actions, otherwise the configured remote URL; HTTPS, SSH (`git@github.com:owner/name.git` and `ssh://`), and Git URLs are supported. Non-GitHub remotes skip hosting. `github-repository = "owner/repository"` overrides discovery, and `github-release = false` disables hosting even when a repository is detected or configured. Hosted releases require `GITHUB_TOKEN`, `GH_TOKEN`, or local `gh` authentication. No inference changes the crates.io trusted publisher or GitHub protection settings.
 
 ## Project Runners
 
@@ -74,7 +78,6 @@ Use the [README hook implementations](../README.md#custom-hooks) inside this run
 ```toml
 workflow = "numeric"
 manifest = "Cargo.toml"
-default-branch = "master"
 remote = "origin"
 timezone = "UTC"
 changelog = "CHANGELOG.md"
@@ -89,12 +92,12 @@ verification-attempts = 6
 verification-delay-seconds = 5
 ```
 
-These are numeric defaults. `manifest` explicitly selects one package, including a workspace member. Changelog paths must stay inside the Git root without symbolic-link traversal. `artifact-directory` optionally selects storage; the global `--artifact-directory` flag overrides it. Otherwise Git's `rcr` metadata directory is used, including for linked worktrees. A configured source-tree artifact directory must already be ignored.
+These are numeric defaults; branch and repository discovery need no TOML entries. `manifest` explicitly selects one package, including a workspace member. Changelog paths must stay inside the Git root without symbolic-link traversal. `artifact-directory` optionally selects storage; the global `--artifact-directory` flag overrides it. Otherwise Git's `rcr` metadata directory is used, including for linked worktrees. A configured source-tree artifact directory must already be ignored.
 
 Numeric changelog formats are `keep-a-changelog` and `intridea`. Optional `placeholder` and `sections` configure Keep a Changelog templates; Intridea accepts a placeholder, defaults to `- Your contribution here.`, and does not accept sections. Semantic mode uses `workflow = "semantic"`, defaults to generated notes and disabled next development, and accepts `changelog-format = "generated"` if explicitly supplied. Either mode accepts `changelog-format = "disabled"` to avoid all changelog file access while retaining numeric fallback or captured semantic release notes. Generated and disabled changelogs reject handwritten template settings.
 
-`next-version` accepts `patch`, `disabled`, or an exact stable increasing SemVer. Explicit release overrides must also be stable; numeric releases cannot decrease the original manifest version. `github-repository = "owner/repository"` enables GitHub Release hosting with `GITHUB_TOKEN` or `GH_TOKEN`; omitting it skips hosting. Verification bounds are 1–60 attempts and 0–60 seconds between absence-only retries.
+`next-version` accepts `patch`, `disabled`, or an exact stable increasing SemVer. Explicit release overrides must also be stable; numeric releases cannot decrease the original manifest version. Verification bounds are 1–60 attempts and 0–60 seconds between absence-only retries.
 
 ## Isolated Tests
 
-The hidden `--test-registry DIRECTORY` option explicitly selects the filesystem publication adapter for shared source/installed executable fixtures. It never discovers production credentials or sends registry requests, is never automatically selected, and is not a production registry configuration option. It suppresses configured production publish commands; only an explicitly supplied `RCR_PUBLISH_COMMAND` can select an isolated command override in this mode. `--test-host DIRECTORY` additionally selects filesystem hosting. Read-only verification requires that test directory to exist. `--test-artifact-api URL` additionally requires that adapter and accepts only a bare literal loopback origin with a fixed dummy token; it never uses production credentials. Real upload-protocol tests independently prove byte-for-byte HTTP publication at a loopback boundary.
+The hidden `--test-registry DIRECTORY` option explicitly selects the filesystem publication adapter for shared source/installed executable fixtures. It never discovers production credentials or sends registry requests, is never automatically selected, and is not a production registry configuration option. It suppresses production GitHub hosting and configured production publish commands; only an explicitly supplied `RCR_PUBLISH_COMMAND` can select an isolated command override in this mode. `--test-host DIRECTORY` additionally selects filesystem hosting. Read-only verification requires that test directory to exist. `--test-artifact-api URL` additionally requires that adapter and accepts only a bare literal loopback origin with a fixed dummy token; it never uses production credentials. Real upload-protocol tests independently prove byte-for-byte HTTP publication at a loopback boundary.
