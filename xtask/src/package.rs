@@ -7,6 +7,9 @@ use std::path::{Component, Path};
 use std::process::Command;
 use tar::Archive;
 
+#[path = "../../tests/support/cli.rs"]
+mod cli_fixture;
+
 fn expected_file(path: &str) -> bool {
     (path.starts_with("src/") && path.ends_with(".rs"))
         || (path.starts_with("docs/") && path.ends_with(".md"))
@@ -117,6 +120,32 @@ pub fn check(root: &Path) -> Result {
     )?;
     run(&consumer, "cargo", &["generate-lockfile", "--offline"])?;
     run(&consumer, "cargo", &["run", "--locked", "--offline"])?;
+    let install = temporary.path().join("installed");
+    run(
+        temporary.path(),
+        "cargo",
+        &[
+            "install",
+            "--locked",
+            "--offline",
+            "--path",
+            temporary
+                .path()
+                .join(&archive_root)
+                .to_str()
+                .ok_or("non-UTF-8 extracted path")?,
+            "--root",
+            install.to_str().ok_or("non-UTF-8 installation path")?,
+            "--debug",
+            "--bin",
+            "rcr",
+        ],
+    )?;
+    cli_fixture::check(
+        &install
+            .join("bin")
+            .join(format!("rcr{}", std::env::consts::EXE_SUFFIX)),
+    )?;
     if fs::read(&archive_path)? != bytes {
         return Err("validated archive changed during consumer validation".into());
     }

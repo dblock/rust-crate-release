@@ -6,6 +6,7 @@ rust-version = "1.99.1"
 publish = false
 
 [dependencies]
+rust-crate-release = { path = ".." }
 flate2 = "1.1.11"
 pulldown-cmark = { version = "0.13.6", default-features = false }
 serde_json = "1.0.154"

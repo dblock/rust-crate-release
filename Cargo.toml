@@ -36,6 +36,8 @@ unsafe_code = "forbid"
 workspace = true
 
 [dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+toml = "1.2.1"
 pulldown-cmark = { version = "0.13.6", default-features = false }
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -51,3 +53,7 @@ globset = "0.4.21"
 dunce = "1.0.5"
 chrono = { version = "0.4.45", default-features = false, features = ["now"] }
 chrono-tz = "0.10.4"
+
+[[bin]]
+name = "rcr"
+path = "src/bin/rcr.rs"
