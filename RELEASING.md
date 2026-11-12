@@ -8,6 +8,8 @@ Check the current manifest version against crates.io before changing it. Keep an
 
 Keep meaningful, attributed changes under `## [Unreleased]` in `CHANGELOG.md`, grouped by change type. rcr turns that section into `## [X.Y.Z] - YYYY-MM-DD` during preparation, then creates a fresh `[Unreleased]` section and advances the manifest to the next patch version afterward. Comparison links are updated automatically. Never overwrite an existing registry version or move a published release tag.
 
+The `[Unreleased]` comparison definition remains while its heading is absent between release and next-development preparation. `.rumdl.toml` permits that unused label without disabling checks for other unused definitions.
+
 ## Validate the Distribution
 
 Run local checks on the exact revision before committing or pushing release-related changes:

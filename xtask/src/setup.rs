@@ -231,14 +231,9 @@ mod tests {
                 &tool,
                 format!("#!/bin/sh\nprintf '{text}\\n'\nexit {code}\n"),
             )?;
-            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755))?;
+            // Interpret the fixture instead of executing a recently written inode.
             assert_eq!(
-                available(
-                    directory.path(),
-                    tool.to_str().unwrap(),
-                    "--version",
-                    "1.2.3"
-                )?,
+                available(directory.path(), "/bin/sh", tool.to_str().unwrap(), "1.2.3")?,
                 expected
             );
         }

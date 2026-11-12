@@ -10,6 +10,10 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [#30](https://github.com/dblock/rust-crate-release/pull/30): Cancel superseded validation runs, apply matrix toolchains throughout test jobs with explicit fixture validation components, and simplify setup and contributor guidance - [@dblock](https://github.com/dblock).
 - [#31](https://github.com/dblock/rust-crate-release/pull/31): Use Keep a Changelog for this repository's release notes and maintenance release configuration - [@dblock](https://github.com/dblock).
 
+### Fixed
+
+- [#32](https://github.com/dblock/rust-crate-release/pull/32): Permit the retained Unreleased comparison during release lint and avoid executing a recently written version-probe test fixture on Linux - [@dblock](https://github.com/dblock).
+
 ## [0.1.1] - 2026-11-12
 
 ### Fixed

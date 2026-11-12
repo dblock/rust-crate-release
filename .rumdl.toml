@@ -2,3 +2,7 @@
 include = ["*.md", "docs/**/*.md", "examples/**/*.md"]
 # Paragraphs must be single source lines; xtask checks this without a width cap.
 disable = ["MD013"]
+
+[MD053]
+# Release preparation retains this comparison until the next heading is created.
+ignored-definitions = ["unreleased"]
