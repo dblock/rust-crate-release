@@ -3,6 +3,7 @@
 ## 0.1.2 (Next)
 
 - [#29](https://github.com/dblock/rust-crate-release/pull/29): Reduce release compilation overhead with verified prebuilt validation tools, Cargo dependency caching, and shared extracted-archive build dependencies while retaining every validation phase - [@dblock](https://github.com/dblock).
+- [#30](https://github.com/dblock/rust-crate-release/pull/30): Cancel superseded validation runs, apply matrix toolchains throughout test jobs with explicit fixture validation components, and simplify setup and contributor guidance - [@dblock](https://github.com/dblock).
 - Your contribution here.
 
 ## 0.1.1 (2026/11/12)

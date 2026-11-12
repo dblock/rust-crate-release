@@ -12,18 +12,15 @@ cargo xtask setup
 
 Setup keeps matching tool versions and downloads actionlint into Cargo's bin directory, which must be on PATH. On Linux x86_64 (including the release runner), rumdl and typos use pinned upstream binaries with SHA-256 verification instead of compiling their dependencies; other platforms install them with Cargo. Tool versions, checksums, and installation commands live in `xtask/src/setup.rs`. For coverage, also install `cargo-llvm-cov` with `cargo install --locked cargo-llvm-cov --version 0.9.1`.
 
-Run these commands from the repository root:
+Before every push, run tests and lint from the repository root. Also run package validation for packaging or public-entry changes:
 
 ```sh
 cargo test --locked --workspace
 cargo xtask lint
 cargo xtask package
-cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info
 ```
 
-Project code, fixtures, and maintenance commands are Rust. The standard GitHub upload action is a separate workflow step; Rust independently verifies its stored bytes through the public REST API before publication. Shared source/installed executable fixtures exercise preparation, rejected remote bytes, and successful verification before isolated publication. [GitHub Actions](docs/actions.md) documents permissions and live-service validation limits.
-
-Tests and lint must pass for the exact revision before every push, including PR updates. Run package validation before committing changes to packaging or public entry points. Reuse final check results if the tested content/configuration has not changed; do not repeatedly run full suites during unrelated edits. Run focused tests while debugging, for example `cargo test --locked -p xtask docs::tests`.
+Checks must pass for the exact revision, including PR updates; run package validation before committing affected changes. Reuse results until tested content/configuration changes. Use focused tests while debugging, for example `cargo test --locked -p xtask docs::tests`.
 
 The Package command uses `cargo package --locked --allow-dirty` so contributors can validate before committing; this does not authorize releasing a dirty tree. It inspects the archive allowlist, compiles its verified source, runs an isolated Rust consumer, installs the extracted archive's rcr executable, and runs the same real-process fixtures as source tests. Extracted consumers and installed binaries remain temporary; their Cargo builds share `target/archive-consumer/` to reuse compiled dependencies across release/development validation without skipping source compilation or fixture checks. Temporary consumers are deleted automatically; `.crate` files remain under ignored `target/package/`. No command above publishes or authenticates.
 
@@ -33,13 +30,15 @@ Maintenance tests live alongside code in `xtask/src/`; they cover Markdown parag
 
 Implementation tests belong in `tests/` and must exercise the real release engine against isolated Git remotes and a local simulated registry. Share source/installed executable fixtures. Cover lifecycle order, trusted edit boundaries, exact uploaded bytes, failed pushes, delayed visibility, and recovery after partial success. Optional artifact overrides must behave consistently when set, absent, or empty. No live publication, credential exchange, or registry mutation in tests.
 
-Aim near 100% of project-owned runtime line/branch coverage where supported, including subprocess errors and meaningful edge cases; report gaps rather than hiding them with exclusions or trivial assertions. The Test workflow submits LCOV to Coveralls; runtime and maintenance code are measured together. Coveralls repository enablement, if required, is an external maintainer setting, not proof of local publication or authentication.
+For local coverage, run `cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info`. Aim near 100% of project-owned runtime line/branch coverage where supported, including subprocess errors and meaningful edge cases; report gaps rather than hiding them with exclusions or trivial assertions. The Test workflow measures runtime and maintenance code together and submits LCOV to Coveralls. Tests use isolated adapters, not live publication or credential exchange; see [GitHub Actions](docs/actions.md#validation-limits) for service-validation limits.
 
 ## Documentation and Tooling
 
 Keep Markdown paragraphs on one source line. Human-readable Markdown headings and YAML workflow/job/step display names use title case; preserve proper names, acronyms, identifiers, and expressions. `cargo xtask lint` enforces these policies with a Markdown parser and a YAML-aware checker, alongside Markdown structure, spelling, Rust, and Actions checks. Review narrow vocabulary exceptions in `.typos.toml`; do not suppress entire documentation trees.
 
 Use separate Test, Lint, and Package workflows and retain Coveralls coverage. Matrices use explicit compact `matrix.entry` objects, never `include`/`exclude` or Cartesian axes. Verify current stable versions when selecting/updating dependencies or tools while preserving the supported Rust floor. Keep [Design](DESIGN.md) current rather than retaining obsolete decisions.
+
+Validation workflows cancel superseded runs for the same workflow/ref; release workflows must remain non-canceling. Matrix toolchain selection applies to the whole test job, including dependency-cache metadata and child Cargo commands, not only its final test step. Install rustfmt and Clippy explicitly: test, coverage, and package fixtures invoke real release validation, and an explicit toolchain override does not install components from `rust-toolchain.toml`.
 
 ## Pull Requests
 
@@ -55,4 +54,4 @@ Before bumping versions, check whether the current version is actually published
 
 After a PR merges, fetch with pruning and verify GitHub's merged state, clean checkouts, and any dependent stacked PRs. Switch to `master`, fast-forward, remove only clean task-owned parallel worktrees, then delete merged local topic branches. Use `git branch -D` only after verifying squash/rebase merge and that no unmerged/dependent work will be lost; never remove dirty worktrees, active PR branches, or `master`. Report blocked cleanup rather than discarding work.
 
-Do not merge, publish, create tags/releases, set up credentials/trusted publishing, or change release protections without explicit authorization. There is no direct-push release exception configured. See [Releasing](RELEASING.md); written instructions do not grant authorization.
+Do not merge, publish, create tags/releases, set up credentials/trusted publishing, or change release protections without explicit authorization. Check current repository protections before a separately authorized release; [Releasing](RELEASING.md) explains the required ordinary pushes but does not grant authorization.

@@ -1,38 +1,22 @@
 # GitHub Actions and Trusted Publishing
 
-Start with [README Usage](../README.md#usage) for the shortest setup. This guide explains first-time publication, permissions, and troubleshooting. Examples use crate `widget`, repository `acme/widget`, and branch `main`; replace these with yours. You do not need to install rcr locally for Actions.
+Follow [README Usage](../README.md#usage) for setup. This guide adds permissions, troubleshooting, and customization details. Examples use crate `widget`, repository `acme/widget`, and branch `main`; replace these with yours.
 
 ## Prepare Your Project
 
-Your project needs a package version in `Cargo.toml` and a committed `Cargo.lock`. Run `cargo generate-lockfile` if the lockfile is missing, including for a library.
-
-No `rcr.toml` is required. rcr discovers your repository and default branch. It publishes the version in `Cargo.toml`, creates a GitHub Release, and prepares the next patch version. For example, releasing `0.1.1` leaves `0.1.2` in the manifest and lockfile.
+Commit your intended `Cargo.toml` version, `Cargo.lock`, and caller workflow to the default branch. Run `cargo generate-lockfile` if the lockfile is missing, including for a library. No local rcr installation or `rcr.toml` is required.
 
 For a workspace member, set `manifest = "path/to/member/Cargo.toml"` in an optional `rcr.toml`. Each release handles one package with its own explicit version; workspace-inherited versions and coordinated multi-crate releases are not supported.
 
-No changelog is required. Numeric releases automatically detect Keep a Changelog or Intridea format in `CHANGELOG.md`. If the file is absent, they skip file updates and use `Release X.Y.Z.` as release notes. No configuration is needed. Unknown or mixed formats stop before release edits; choose an explicit format or `changelog-format = "disabled"` in `rcr.toml` to override detection.
+No changelog is required. If you keep one, add meaningful unreleased notes before releasing; empty notes are rejected. See the [README example](../README.md#4-update-changelog) or [Changelog Editing](changelogs.md) for automatic detection, supported formats, and disabling file updates.
 
-If you keep a changelog, add meaningful unreleased notes, for example:
-
-```markdown
-# Changelog
-
-## [Unreleased]
-
-### Added
-
-- Add widget serialization.
-```
-
-When handwritten changelog updates are enabled, add real notes before each release; empty notes are rejected. See [Changelogs](changelogs.md) for other formats or generated notes. Merge the lockfile, workflow, and any optional configuration and notes before releasing.
-
-The workflow runs formatting checks, tests, and Clippy before publishing. Projects needing system libraries or other setup steps can use the [composite action](#custom-jobs-with-the-composite-action).
+The workflow runs formatting checks, tests, and Clippy before publishing. Use [`setup-command`](#customize-release-phases) for project dependencies and tools; use the [composite action](#custom-jobs-with-the-composite-action) only when you need a custom job layout.
 
 ## Publish a New Crate Once
 
-**Skip this section if you already own a published crate.** [crates.io requires an API token for the first publication](https://crates.io/docs/trusted-publishing). You cannot register a trusted publisher for an unpublished crate; [pending publishers are a future possibility](https://rust-lang.github.io/rfcs/3691-trusted-publishing-cratesio.html#future-possibilities), not a supported first-time process.
+**Skip this section if your crate is already published.** [crates.io requires an API token for the first publication](https://crates.io/docs/trusted-publishing); configure trusted publishing afterward.
 
-Use Cargo locally for the one-time bootstrap. Cargo uses credentials saved by `cargo login`, so no local rcr installation or `CARGO_REGISTRY_TOKEN` environment variable is needed. The supplied rcr Actions workflow supports trusted publishing only; do not add a Cargo-token secret to it.
+Use Cargo locally for this one-time bootstrap. The supplied Actions workflow supports trusted publishing only; do not add a Cargo-token secret to it.
 
 1. Sign in to crates.io with GitHub and verify your email under [Account Settings](https://crates.io/settings/profile), as described in Cargo's [first-publication prerequisites](https://doc.rust-lang.org/cargo/reference/publishing.html#before-your-first-publish).
 2. Create a short-lived token under [API Tokens](https://crates.io/settings/tokens). Grant `publish-new` for creating the crate and restrict the crate-name pattern to your intended name. Do not share the token or commit it to Git.
@@ -48,7 +32,6 @@ Use Cargo locally for the one-time bootstrap. Cargo uses credentials saved by `c
 
    ```sh
    cargo publish --locked
-   cargo logout
    ```
 
 5. Run `cargo logout` even after failure when credentials are no longer needed, and revoke the token under crates.io **API Tokens**. Confirm whether the version reached crates.io before retrying a failed upload.
@@ -166,6 +149,7 @@ Registry visibility can lag upload acceptance. A `not_visible` verification resu
 | Artifact verification fails | Check `actions: read` and the upload step. Do not bypass verification. |
 | Git push fails after publication | Check crates.io and remote tags before retrying; review [branch rules](#configure-github). |
 | Formatting, tests, or packaging fail | Read the failing command's output. Check the lockfile and any required tools or system libraries. |
+| Run appears stuck | Check the active step. Dependency compilation and repeated source/archive/development validation can take several minutes; child-command output may appear only when it finishes. Do not dispatch a competing release. |
 | Verification says `not_visible` | Wait, then [verify the released archive](recovery.md#verify-without-publishing); do not upload again. |
 
 The sections below are advanced reference. They are not additional setup steps.
@@ -224,7 +208,13 @@ Names are immutable within a run/attempt; conflicts fail rather than overwrite r
 
 The reusable workflow accepts `toolchain` (default `1.99.1`, which is the minimum), `git-user-name`, and `git-user-email`. These select the project/tool runtime and release commit identity without editing the shared workflow. A composite-action caller configures its own Git identity.
 
-Both entry points accept an optional `setup-command` as JSON argv, for example `setup-command: '["cargo","fetch","--locked"]'`. It runs once in the project root after Rust/tool installation and the caller guard, but before any preparation or validation. Use it to install project-specific tools or system dependencies; they are not installed for other consumers. A failure prevents preparation and publication and is reported to the terminal failure callback. Setup must not leave tracked source edits or untracked tooling inside the checkout. Empty input skips setup, and shell syntax requires an explicit shell program in argv.
+Both entry points accept an optional `setup-command` as JSON argv. For a project-owned Rust setup task, add this beside `tool-ref` in the reusable-workflow caller:
+
+```yaml
+setup-command: '["cargo", "xtask", "setup"]'
+```
+
+The command runs once in the project root after Rust/tool installation and the caller guard, before preparation or validation. Use it to install your dependencies and tools; other consumers do not inherit them. A failure blocks preparation and publication and selects the failure callback. Setup must leave the source tree clean. Empty input skips setup; shell syntax requires an explicit shell program in argv.
 
 Both entry points accept direct JSON argv inputs: `validate-command` replaces the configured validation argv, `test-command` appends an additional source/development validation command, `prepare-command` edits files after release metadata preparation, and `bump-command` edits files after optional next-development metadata preparation. Edit commands finish before trusted staging and real validation. Their environment provides `RCR_RELEASE_VERSION` and, for development, `RCR_NEXT_VERSION`. Omitted/empty inputs retain existing behavior. `prepare-command`, `publish-command`, and `bump-command` also accept TOML argv configuration; `RCR_*_COMMAND` environment selections take precedence. Shell syntax requires an explicit shell program in argv.
 

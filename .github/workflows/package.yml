@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   package:
     name: Archive Consumer on ${{ matrix.entry.os }}
@@ -26,6 +30,7 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: '1.99.1'
+          components: rustfmt, clippy
       - name: Cache Rust Dependencies
         uses: Swatinem/rust-cache@v2.9.3
       - name: Validate Archive and Consumer
