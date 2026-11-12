@@ -4,9 +4,11 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.99.1"
 publish = false
+default-run = "xtask"
 
 [dependencies]
 rust-crate-release = { path = ".." }
+regex = "1.13.1"
 flate2 = "1.1.11"
 pulldown-cmark = { version = "0.13.6", default-features = false }
 serde_json = "1.0.154"
