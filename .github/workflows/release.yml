@@ -17,6 +17,11 @@ on:
         required: false
         default: ''
         type: string
+      runner:
+        description: Optional trusted project runner as JSON argv
+        required: false
+        default: ''
+        type: string
     outputs:
       version:
         description: Released crate version
@@ -68,3 +73,4 @@ jobs:
           root: consumer
           config: ${{ inputs.config }}
           version: ${{ inputs.version }}
+          runner: ${{ inputs.runner }}

@@ -63,6 +63,14 @@ The composite action calls the Rust `rcr actions guard`, `rcr actions prepare`, 
 
 `rcr.toml` is trusted data, not a dynamically loaded Rust module or shell script. Unknown keys, invalid enums/timezones/retry bounds, empty validation argv, and incompatible workflow/changelog selections fail. Validators execute argv directly, without a shell. Use a project-owned Rust runner for typed hooks or custom providers.
 
+## Project Runners
+
+A project binary can return `cli::main_with(|workflow| { /* register trusted hooks/providers */ Ok(()) })` from `main`. This retains stock argument parsing, JSON output, configuration, source-input transport, and Actions artifact verification. Library callers can use `cli::run_with(cli, &configure)` directly. The configuration closure survives the internal Actions-to-engine dispatch and runs on each preparation/publication invocation.
+
+Select it with `runner = ["cargo", "run", "--locked", "--quiet", "--example", "release", "--"]` in `rcr.toml`, or supply the same JSON argv through `RCR_RUNNER` or the composite/reusable Action's `runner` input. `rcr prepare` and `rcr release` then delegate directly to that program with all parsed arguments, including immutable inputs and preservation IDs. Environment selection takes precedence over configuration. No shell is involved; the runner must print exactly one JSON result and send progress to stderr. Calling ordinary `cli::run` from a selected runner is rejected to prevent recursion.
+
+Use the [README hook implementations](../README.md#custom-hooks) inside this runner's configuration closure, obtaining the project root from `workflow.components.package.root()`. Do not replace preservation with a successful step flag or weaken the configured validators. Runners are reviewed source code with release authority, not untrusted plugins.
+
 ```toml
 workflow = "numeric"
 manifest = "Cargo.toml"

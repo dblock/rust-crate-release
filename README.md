@@ -64,7 +64,7 @@ Replace both values with your project's details. Numeric releases use the manife
 
 ## Custom Hooks
 
-For example, keep a `VERSION` file synchronized with `Cargo.toml`: write the release version before publishing, then the next development version after publishing. Hooks are Rust code registered in your own runner; `rcr.toml`, the installed rcr command, and the supplied Actions workflow do not load custom hooks.
+For example, keep a `VERSION` file synchronized with `Cargo.toml`: write the release version before publishing, then the next development version after publishing. Hooks are Rust code registered in your own runner. The example below constructs the engine directly; [project runners](docs/cli.md#project-runners) using `cli::main_with` let `rcr.toml`, the installed rcr command, and the supplied Actions workflow select the same custom hooks.
 
 Add the library as a development dependency:
 
