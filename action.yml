@@ -8,6 +8,9 @@ inputs:
   toolchain:
     description: Rust toolchain for the tool and project, at least 1.99.1
     default: '1.99.1'
+  setup-command:
+    description: Optional trusted dependency/tool setup command as JSON argv
+    default: ''
   validate-command:
     description: Optional replacement validation command as JSON argv
     default: ''
@@ -78,6 +81,16 @@ runs:
         RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         RUSTUP_TOOLCHAIN: ${{ inputs.toolchain }}
       run: '"$RUNNER_TEMP/rcr-tool/bin/rcr" --root "$RCR_ROOT" actions guard'
+    - name: Set Up Project
+      id: setup
+      if: inputs.setup-command != ''
+      shell: bash
+      env:
+        RCR_ROOT: ${{ inputs.root }}
+        RCR_SETUP_COMMAND: ${{ inputs.setup-command }}
+        RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        RUSTUP_TOOLCHAIN: ${{ inputs.toolchain }}
+      run: '"$RUNNER_TEMP/rcr-tool/bin/rcr" --root "$RCR_ROOT" actions setup'
     - name: Prepare Release
       id: prepare
       shell: bash

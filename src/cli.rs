@@ -312,7 +312,10 @@ fn repository_from_remote(remote: &str) -> Result<Option<String>> {
     Ok(Some(repository.into()))
 }
 
-fn phase_command(key: &str, fallback: Option<Vec<String>>) -> Result<Option<Vec<String>>> {
+pub(crate) fn phase_command(
+    key: &str,
+    fallback: Option<Vec<String>>,
+) -> Result<Option<Vec<String>>> {
     let command = std::env::var(key)
         .ok()
         .filter(|value| !value.is_empty())
@@ -597,7 +600,7 @@ pub fn run(cli: Cli) -> Result<Value> {
     if matches!(
         cli.command,
         Command::Actions {
-            command: crate::actions::ActionCommand::Notify
+            command: crate::actions::ActionCommand::Notify | crate::actions::ActionCommand::Setup
         }
     ) {
         return run_with(cli, &|_| Ok(()));
@@ -670,6 +673,7 @@ fn forward_arguments(cli: &Cli, root: &Path) -> Vec<std::ffi::OsString> {
             "actions".into(),
             match command {
                 crate::actions::ActionCommand::Guard => "guard",
+                crate::actions::ActionCommand::Setup => "setup",
                 crate::actions::ActionCommand::Prepare => "prepare",
                 crate::actions::ActionCommand::Release => "release",
                 crate::actions::ActionCommand::Notify => "notify",

@@ -192,6 +192,76 @@ mod tests {
     }
 
     #[test]
+    fn setup_command_is_optional_forwarded_and_runs_before_preparation() {
+        let action = YamlLoader::load_from_str(include_str!("../../action.yml")).unwrap();
+        let action = &action[0];
+        assert_eq!(
+            action["inputs"]["setup-command"]["default"].as_str(),
+            Some("")
+        );
+        let steps = action["runs"]["steps"].as_vec().unwrap();
+        let index = |name| {
+            steps
+                .iter()
+                .position(|step| step["name"].as_str() == Some(name))
+                .unwrap()
+        };
+        assert!(index("Set Up Rust") < index("Set Up Project"));
+        assert!(index("Install Release Tool") < index("Set Up Project"));
+        assert!(index("Guard Release and Locate Diagnostics") < index("Set Up Project"));
+        assert!(index("Set Up Project") < index("Prepare Release"));
+        let setup = composite_step("Set Up Project");
+        assert_eq!(setup["if"].as_str(), Some("inputs.setup-command != ''"));
+        assert_eq!(
+            setup["env"]["RCR_SETUP_COMMAND"].as_str(),
+            Some("${{ inputs.setup-command }}")
+        );
+        assert!(setup["run"].as_str().unwrap().ends_with("actions setup"));
+        let workflow =
+            YamlLoader::load_from_str(include_str!("../../.github/workflows/release.yml")).unwrap();
+        assert_eq!(
+            workflow[0]["on"]["workflow_call"]["inputs"]["setup-command"]["default"].as_str(),
+            Some("")
+        );
+        let release = workflow[0]["jobs"]["release"]["steps"]
+            .as_vec()
+            .unwrap()
+            .iter()
+            .find(|step| step["id"].as_str() == Some("release"))
+            .unwrap();
+        assert_eq!(
+            release["with"]["setup-command"].as_str(),
+            Some("${{ inputs.setup-command }}")
+        );
+    }
+
+    #[test]
+    fn self_release_and_lint_share_rust_setup() -> Result {
+        let workflow =
+            YamlLoader::load_from_str(include_str!("../../.github/workflows/publish.yml"))?;
+        let command = workflow[0]["jobs"]["release"]["with"]["setup-command"]
+            .as_str()
+            .unwrap();
+        let argv: Vec<String> = serde_json::from_str(command)?;
+        assert_eq!(argv, ["cargo", "xtask", "setup"]);
+        let lint = YamlLoader::load_from_str(include_str!("../../.github/workflows/lint.yml"))?;
+        let steps = lint[0]["jobs"]["lint"]["steps"].as_vec().unwrap();
+        let setup = steps
+            .iter()
+            .position(|step| step["run"].as_str() == Some("cargo xtask setup"))
+            .unwrap();
+        let validation = steps
+            .iter()
+            .position(|step| step["run"].as_str() == Some("cargo xtask lint"))
+            .unwrap();
+        assert!(
+            setup < validation,
+            "validation tools must be installed before lint"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn composite_action_preserves_source_inputs_once_per_artifact() {
         for name in ["Preserve Exact Release", "Retain Final Diagnostics"] {
             let step = composite_step(name);

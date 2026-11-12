@@ -27,6 +27,8 @@ pub enum ActionCommand {
     Notify,
     /// Validate the caller and locate retained files.
     Guard,
+    /// Install project dependencies/tools before release preparation.
+    Setup,
     /// Prepare without publication and expose exact upload paths.
     Prepare,
     /// Verify the uploaded artifact and complete publication.
@@ -81,6 +83,19 @@ pub(crate) fn run(
     }
     guard(&|key| std::env::var(key).ok())?;
     let root = dunce::canonicalize(&cli.root)?;
+    if matches!(mode, ActionCommand::Setup) {
+        let command = crate::cli::phase_command("RCR_SETUP_COMMAND", None)?;
+        if let Some(argv) = &command {
+            let args: Vec<_> = argv[1..].iter().map(String::as_str).collect();
+            let output = crate::command::run(&root, &argv[0], &args)?;
+            eprint!(
+                "{}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        return Ok(json!({"operation":"actions-setup","skipped":command.is_none()}));
+    }
     let git = Git::new(&root, environment("RCR_DEFAULT_BRANCH")?, "origin")?;
     let directory = git.artifact_directory()?;
     output(
@@ -169,9 +184,16 @@ fn notify(cli: &Cli) -> Result<Value> {
             .transpose()
             .map(|value| value.or(fallback))
     };
-    let success = environment("RCR_STATUS")? == "success";
+    let status_success = environment("RCR_STATUS")? == "success";
     let mut run = execution_provider(&config.default_branch).metadata();
     run.external_steps = external_steps(std::env::var("RCR_STEPS").ok().as_deref())?;
+    let success = status_success
+        && !run.external_steps.iter().any(|step| {
+            matches!(
+                step.conclusion,
+                crate::execution::StepOutcome::Failure | crate::execution::StepOutcome::Cancelled
+            )
+        });
     let execution = ExecutionContext {
         run,
         ..ExecutionContext::default()

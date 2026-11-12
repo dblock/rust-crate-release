@@ -21,4 +21,5 @@ jobs:
     with:
       tool-ref: ${{ github.sha }}
       version: ${{ inputs.version }}
+      setup-command: '["cargo", "xtask", "setup"]'
       runner: '["cargo","run","--locked","--quiet","-p","xtask","--bin","rcr-release","--"]'

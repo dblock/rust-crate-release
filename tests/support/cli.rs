@@ -28,6 +28,7 @@ fn process(binary: &Path, root: &Path) -> Command {
         "RCR_BUMP_COMMAND",
         "RCR_VALIDATE_COMMAND",
         "RCR_TEST_COMMAND",
+        "RCR_SETUP_COMMAND",
         "RCR_SUCCESS_COMMAND",
         "RCR_FAILURE_COMMAND",
     ] {
@@ -78,6 +79,26 @@ pub fn check(binary: &Path) -> Result {
             assert_eq!(context["run"]["external_steps"][0]["conclusion"], "success");
             assert!(!context.to_string().contains("must-not-appear"));
         }
+        let notification = success(
+            process(binary, fixture.root())
+                .args(["actions", "notify"])
+                .env("RCR_STATUS", "success")
+                .env(
+                    "RCR_STEPS",
+                    r#"{"setup":{"outcome":"failure","conclusion":"failure"}}"#,
+                )
+                .env("RCR_SUCCESS_COMMAND", r#"["must-not-report-success"]"#)
+                .env(
+                    "RCR_FAILURE_COMMAND",
+                    r#"["sh","-c","printf '%s' \"$RCR_STATUS\" > .git/setup-failure"]"#,
+                )
+                .output()?,
+        )?;
+        assert_eq!(notification["success"], false);
+        assert_eq!(
+            fs::read_to_string(fixture.root().join(".git/setup-failure"))?,
+            "failure"
+        );
     }
     for override_mode in ["unset", "empty", "provided"] {
         let (released, next) = if override_mode == "provided" {
@@ -423,6 +444,47 @@ fn check_action(binary: &Path) -> Result {
         command
     };
     success(action_process().args(["actions", "guard"]).output()?)?;
+    let setup = || {
+        let mut command = action_process();
+        command.args(["actions", "setup"]);
+        command
+    };
+    assert_eq!(success(setup().output()?)?["skipped"], true);
+    for invalid in ["not JSON", "[]", r#"[""]"#] {
+        assert!(
+            !setup()
+                .env("RCR_SETUP_COMMAND", invalid)
+                .output()?
+                .status
+                .success()
+        );
+    }
+    let configured = success(
+        setup()
+            .env("RCR_RUNNER", r#"["must-not-run-before-setup"]"#)
+            .env(
+                "RCR_SETUP_COMMAND",
+                r#"["git","config","--local","rcr.setup","ready with spaces"]"#,
+            )
+            .output()?,
+    )?;
+    assert_eq!(configured["skipped"], false);
+    let value = Command::new("git")
+        .args(["config", "--local", "rcr.setup"])
+        .current_dir(fixture.root())
+        .output()?;
+    assert!(value.status.success());
+    assert_eq!(String::from_utf8(value.stdout)?.trim(), "ready with spaces");
+    let failed_setup = setup()
+        .env(
+            "RCR_SETUP_COMMAND",
+            r#"["git","rcr-missing-setup-command"]"#,
+        )
+        .output()?;
+    assert!(!failed_setup.status.success());
+    assert!(failed_setup.stdout.is_empty());
+    assert!(!fixture.root().join(".git/rcr/source-inputs.json").exists());
+    Git::new(fixture.root(), "main", "origin")?.assert_clean()?;
     let unsafe_caller = action_process()
         .env("GITHUB_EVENT_NAME", "push")
         .args(["actions", "prepare"])

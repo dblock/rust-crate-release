@@ -172,7 +172,7 @@ The sections below are advanced reference. They are not additional setup steps.
 
 ## Custom Jobs with the Composite Action
 
-Use `dblock/rust-crate-release@v0.1.0` for project-specific dependency/tool setup. Unlike the reusable workflow, a composite cannot impose job-level environment, permissions, concurrency, or checkout policy. Supply them explicitly:
+Use `dblock/rust-crate-release@v0.1.0` for custom job layouts beyond the reusable workflow's `setup-command` hook. A composite cannot impose job-level environment, permissions, concurrency, or checkout policy. Supply them explicitly:
 
 ```yaml
 name: Release
@@ -210,7 +210,7 @@ jobs:
 
 Insert your additional setup before the final step. The action accepts `root` (default `.`), `config`, and `version`; outputs are `name`, `version`, `archive`, `checksum`, and JSON `verification`. Keep the selected Cargo package inside its Git root and do not leave untracked tooling inside the checkout.
 
-The action installs Rust 1.99.1 and builds rcr. Your project must support the selected toolchain. Packaging checks run offline, so custom validators must first cache dependencies and install required tools; normal Cargo test/Clippy runs populate the dependency cache.
+The action installs the selected Rust toolchain with rustfmt and Clippy and builds rcr. Your project must support the selected toolchain. Packaging checks run offline, so custom validators must first cache dependencies and install required tools; normal Cargo test/Clippy runs populate the dependency cache.
 
 ## Preservation and Failure Boundaries
 
@@ -223,6 +223,8 @@ Names are immutable within a run/attempt; conflicts fail rather than overwrite r
 ## Customize Release Phases
 
 The reusable workflow accepts `toolchain` (default `1.99.1`, which is the minimum), `git-user-name`, and `git-user-email`. These select the project/tool runtime and release commit identity without editing the shared workflow. A composite-action caller configures its own Git identity.
+
+Both entry points accept an optional `setup-command` as JSON argv, for example `setup-command: '["cargo","fetch","--locked"]'`. It runs once in the project root after Rust/tool installation and the caller guard, but before any preparation or validation. Use it to install project-specific tools or system dependencies; they are not installed for other consumers. A failure prevents preparation and publication and is reported to the terminal failure callback. Setup must not leave tracked source edits or untracked tooling inside the checkout. Empty input skips setup, and shell syntax requires an explicit shell program in argv.
 
 Both entry points accept direct JSON argv inputs: `validate-command` replaces the configured validation argv, `test-command` appends an additional source/development validation command, `prepare-command` edits files after release metadata preparation, and `bump-command` edits files after optional next-development metadata preparation. Edit commands finish before trusted staging and real validation. Their environment provides `RCR_RELEASE_VERSION` and, for development, `RCR_NEXT_VERSION`. Omitted/empty inputs retain existing behavior. `prepare-command`, `publish-command`, and `bump-command` also accept TOML argv configuration; `RCR_*_COMMAND` environment selections take precedence. Shell syntax requires an explicit shell program in argv.
 
