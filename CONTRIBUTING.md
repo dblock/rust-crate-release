@@ -10,7 +10,7 @@ Install [rustup](https://rustup.rs), Git, curl, and tar on your PATH. The toolch
 cargo xtask setup
 ```
 
-Setup keeps matching tool versions, installs missing or different versions of rumdl and typos-cli with Cargo, and downloads actionlint into Cargo's bin directory, which must be on PATH. Tool versions and installation commands live in `xtask/src/setup.rs`. For coverage, also install `cargo-llvm-cov` with `cargo install --locked cargo-llvm-cov --version 0.9.1`.
+Setup keeps matching tool versions and downloads actionlint into Cargo's bin directory, which must be on PATH. On Linux x86_64 (including the release runner), rumdl and typos use pinned upstream binaries with SHA-256 verification instead of compiling their dependencies; other platforms install them with Cargo. Tool versions, checksums, and installation commands live in `xtask/src/setup.rs`. For coverage, also install `cargo-llvm-cov` with `cargo install --locked cargo-llvm-cov --version 0.9.1`.
 
 Run these commands from the repository root:
 
@@ -25,7 +25,7 @@ Project code, fixtures, and maintenance commands are Rust. The standard GitHub u
 
 Tests and lint must pass for the exact revision before every push, including PR updates. Run package validation before committing changes to packaging or public entry points. Reuse final check results if the tested content/configuration has not changed; do not repeatedly run full suites during unrelated edits. Run focused tests while debugging, for example `cargo test --locked -p xtask docs::tests`.
 
-The Package command uses `cargo package --locked --allow-dirty` so contributors can validate before committing; this does not authorize releasing a dirty tree. It inspects the archive allowlist, compiles its verified source, runs an isolated Rust consumer, installs the extracted archive's rcr executable, and runs the same real-process fixtures as source tests. Temporary consumers are deleted automatically; `.crate` files remain under ignored `target/package/`. No command above publishes or authenticates.
+The Package command uses `cargo package --locked --allow-dirty` so contributors can validate before committing; this does not authorize releasing a dirty tree. It inspects the archive allowlist, compiles its verified source, runs an isolated Rust consumer, installs the extracted archive's rcr executable, and runs the same real-process fixtures as source tests. Extracted consumers and installed binaries remain temporary; their Cargo builds share `target/archive-consumer/` to reuse compiled dependencies across release/development validation without skipping source compilation or fixture checks. Temporary consumers are deleted automatically; `.crate` files remain under ignored `target/package/`. No command above publishes or authenticates.
 
 ## Tests
 
