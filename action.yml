@@ -64,6 +64,7 @@ runs:
       uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       with:
         toolchain: ${{ inputs.toolchain }}
+        components: rustfmt, clippy
     - name: Install Release Tool
       shell: bash
       env:
@@ -132,6 +133,7 @@ runs:
         path: |
           ${{ steps.paths.outputs.directory }}/*.crate
           ${{ steps.paths.outputs.directory }}/*.bundle
+          ${{ steps.paths.outputs.directory }}/source-inputs.json
           ${{ steps.paths.outputs.directory }}/release.json
           ${{ steps.paths.outputs.directory }}/execution.json
     - name: Notify Release Result
@@ -158,4 +160,3 @@ runs:
           cd "$RCR_ROOT"
           "${argv[@]}"
         fi
-          ${{ steps.paths.outputs.directory }}/source-inputs.json
