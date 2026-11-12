@@ -75,7 +75,7 @@ This example keeps `VERSION` synchronized with `Cargo.toml` before and after pub
 Add the library as a development dependency:
 
 ```sh
-cargo add --dev rust-crate-release@0.1.1
+cargo add --dev rust-crate-release@0.1.2
 ```
 
 Create `examples/release.rs`:

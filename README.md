@@ -28,9 +28,9 @@ permissions:
 
 jobs:
   release:
-    uses: dblock/rust-crate-release/.github/workflows/release.yml@v0.1.1
+    uses: dblock/rust-crate-release/.github/workflows/release.yml@v0.1.2
     with:
-      tool-ref: v0.1.1
+      tool-ref: v0.1.2
 ```
 
 Commit this file and `Cargo.lock` to your default branch, even for a library. The workflow installs rcr and Rust for you.
