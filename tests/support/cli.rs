@@ -60,6 +60,7 @@ fn commit(root: &Path) -> Result {
 /// Shared by the source executable and the binary installed from the actual archive.
 pub fn check(binary: &Path) -> Result {
     check_without_configuration(binary)?;
+    check_unknown_changelog(binary)?;
     #[cfg(unix)]
     {
         let fixture = GitProject::cargo_library()?;
@@ -91,11 +92,22 @@ pub fn check(binary: &Path) -> Result {
         };
         let fixture = GitProject::cargo_library()?;
         let root = fixture.root();
-        let format = if override_mode == "empty" {
-            fs::remove_file(root.join("CHANGELOG.md"))?;
-            "disabled"
-        } else {
-            "intridea"
+        let format = match override_mode {
+            "empty" => {
+                fs::write(
+                    root.join("CHANGELOG.md"),
+                    "A custom changelog without version headings.\n",
+                )?;
+                "disabled"
+            }
+            "provided" => {
+                fs::write(
+                    root.join("CHANGELOG.md"),
+                    "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Initial fixture.\n",
+                )?;
+                "keep-a-changelog"
+            }
+            _ => "automatic",
         };
         fs::write(
             root.join("rcr.toml"),
@@ -218,7 +230,15 @@ pub fn check(binary: &Path) -> Result {
             assert_eq!(fs::read_to_string(root.join("PHASE_NEXT"))?, next);
         }
         if override_mode == "empty" {
-            assert!(!root.join("CHANGELOG.md").exists());
+            assert_eq!(
+                fs::read_to_string(root.join("CHANGELOG.md"))?,
+                "A custom changelog without version headings.\n"
+            );
+        } else if override_mode == "provided" {
+            let changelog = fs::read_to_string(root.join("CHANGELOG.md"))?;
+            assert!(changelog.contains("## [Unreleased]"));
+            assert!(changelog.contains(&format!("## [{released}] - ")));
+            assert!(changelog.contains("- Initial fixture."));
         }
         assert_eq!(fs::read(archive)?, bytes);
         assert_eq!(fs::read(&inputs)?, original_inputs);
@@ -280,6 +300,8 @@ pub fn check(binary: &Path) -> Result {
     for config in [
         "unknown-option = true\n",
         "workflow = \"semantic\"\nchangelog-format = \"intridea\"\n",
+        "changelog-format = \"disabled\"\nplaceholder = \"- Your contribution here.\"\n",
+        "sections = [\"Added\"]\n",
         "validation = []\n",
         "verification-attempts = 0\n",
         "timezone = \"not-a-zone\"\n",
@@ -324,6 +346,7 @@ pub fn check(binary: &Path) -> Result {
     )?;
     assert_eq!(completed["version"], "1.0.0");
     assert!(completed["next_version"].is_null());
+    assert!(fs::read_to_string(semantic.root().join("CHANGELOG.md"))?.contains("## 1.0.0 ("));
     assert_eq!(
         completed["captured"]["semantic"],
         prepared["captured"]["semantic"]
@@ -371,7 +394,7 @@ pub fn check(binary: &Path) -> Result {
 }
 
 fn check_action(binary: &Path) -> Result {
-    let fixture = project_without_configuration()?;
+    let fixture = project_without_configuration(None)?;
     let temporary = fixture.temporary_directory();
     let registry = temporary.join("action-registry");
     let output_path = temporary.join("action-output");
@@ -460,15 +483,17 @@ fn check_action(binary: &Path) -> Result {
         fs::read(fixture.root().join(".git/rcr/release-fixture-0.1.0.crate"))?
     );
     Git::new(fixture.root(), "main", "origin")?.assert_clean()?;
+    assert!(!fixture.root().join("CHANGELOG.md").exists());
     Ok(())
 }
 
-fn project_without_configuration() -> Result<GitProject> {
+fn project_without_configuration(changelog: Option<&str>) -> Result<GitProject> {
     let fixture = GitProject::cargo_library()?;
-    fs::write(
-        fixture.root().join("CHANGELOG.md"),
-        "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Initial fixture.\n",
-    )?;
+    if let Some(source) = changelog {
+        fs::write(fixture.root().join("CHANGELOG.md"), source)?;
+    } else {
+        fs::remove_file(fixture.root().join("CHANGELOG.md"))?;
+    }
     for args in [
         vec!["branch", "-m", "main"],
         vec!["add", "--all"],
@@ -493,52 +518,107 @@ fn project_without_configuration() -> Result<GitProject> {
         );
     }
     assert!(!fixture.root().join("rcr.toml").exists());
+    assert_eq!(
+        fixture.root().join("CHANGELOG.md").exists(),
+        changelog.is_some()
+    );
     Ok(fixture)
 }
 
 fn check_without_configuration(binary: &Path) -> Result {
-    let fixture = project_without_configuration()?;
-    let registry = fixture.temporary_directory().join("registry");
-    let completed = success(
-        process(binary, fixture.root())
+    for (source, pending) in [
+        (None, None),
+        (
+            Some("## [Unreleased]\n\n- Initial fixture.\n"),
+            Some("## [Unreleased]"),
+        ),
+        (
+            Some("## 0.1.0 (Next)\n\n- Initial fixture.\n- Your contribution here.\n"),
+            Some("## 0.1.1 (Next)"),
+        ),
+    ] {
+        let fixture = project_without_configuration(source)?;
+        let registry = fixture.temporary_directory().join("registry");
+        let completed = success(
+            process(binary, fixture.root())
+                .arg("--test-registry")
+                .arg(&registry)
+                .arg("release")
+                .output()?,
+        )?;
+        assert_eq!(completed["version"], "0.1.0");
+        assert_eq!(completed["next_version"], "0.1.1");
+        assert_eq!(completed["verification"]["status"], "verified");
+        assert_eq!(
+            fs::read(registry.join("release-fixture-0.1.0.crate"))?,
+            fs::read(completed["archive"].as_str().unwrap())?
+        );
+        let git = Git::new(fixture.root(), "main", "origin")?;
+        assert_eq!(
+            git.remote_tag("v0.1.0")?,
+            Some(completed["commit"].as_str().unwrap().into())
+        );
+        assert_eq!(
+            git.remote_head()?,
+            completed["development_commit"].as_str().unwrap()
+        );
+        git.assert_clean()?;
+        assert!(!fixture.root().join("rcr.toml").exists());
+        if let Some(pending) = pending {
+            assert!(fs::read_to_string(fixture.root().join("CHANGELOG.md"))?.contains(pending));
+        } else {
+            assert!(!fixture.root().join("CHANGELOG.md").exists());
+        }
+        let verified = success(
+            process(binary, fixture.temporary_directory())
+                .arg("--test-registry")
+                .arg(&registry)
+                .args([
+                    "verify",
+                    "--name",
+                    "release-fixture",
+                    "--release-version",
+                    "0.1.0",
+                    "--archive",
+                    completed["archive"].as_str().unwrap(),
+                ])
+                .output()?,
+        )?;
+        assert_eq!(verified["verification"]["status"], "verified");
+    }
+    Ok(())
+}
+
+fn check_unknown_changelog(binary: &Path) -> Result {
+    for source in [
+        "",
+        "# Custom notes\n\n- Initial fixture.\n",
+        "## [Unreleased]\n\n- Initial fixture.\n\n## 0.1.0 (Next)\n\n- Your contribution here.\n",
+    ] {
+        let fixture = project_without_configuration(Some(source))?;
+        let git = Git::new(fixture.root(), "main", "origin")?;
+        let head = git.inspect()?.head;
+        let registry = fixture.temporary_directory().join("registry");
+        let output = process(binary, fixture.root())
             .arg("--test-registry")
             .arg(&registry)
-            .arg("release")
-            .output()?,
-    )?;
-    assert_eq!(completed["version"], "0.1.0");
-    assert_eq!(completed["next_version"], "0.1.1");
-    assert_eq!(completed["verification"]["status"], "verified");
-    assert_eq!(
-        fs::read(registry.join("release-fixture-0.1.0.crate"))?,
-        fs::read(completed["archive"].as_str().unwrap())?
-    );
-    let git = Git::new(fixture.root(), "main", "origin")?;
-    assert_eq!(
-        git.remote_tag("v0.1.0")?,
-        Some(completed["commit"].as_str().unwrap().into())
-    );
-    assert_eq!(
-        git.remote_head()?,
-        completed["development_commit"].as_str().unwrap()
-    );
-    git.assert_clean()?;
-    assert!(!fixture.root().join("rcr.toml").exists());
-    let verified = success(
-        process(binary, fixture.temporary_directory())
-            .arg("--test-registry")
-            .arg(&registry)
-            .args([
-                "verify",
-                "--name",
-                "release-fixture",
-                "--release-version",
-                "0.1.0",
-                "--archive",
-                completed["archive"].as_str().unwrap(),
-            ])
-            .output()?,
-    )?;
-    assert_eq!(verified["verification"]["status"], "verified");
+            .args(["release", "--release-version", "0.2.0"])
+            .output()?;
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("changelog-format"));
+        assert_eq!(
+            fs::read_to_string(fixture.root().join("CHANGELOG.md"))?,
+            source
+        );
+        assert!(
+            fs::read_to_string(fixture.root().join("Cargo.toml"))?.contains("version = \"0.1.0\"")
+        );
+        assert_eq!(git.inspect()?.head, head);
+        assert_eq!(git.remote_head()?, head);
+        assert!(git.remote_tag("v0.2.0")?.is_none());
+        assert_eq!(fs::read_dir(registry)?.count(), 0);
+        git.assert_clean()?;
+    }
     Ok(())
 }

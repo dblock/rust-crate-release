@@ -1,6 +1,6 @@
 #![doc = include_str!("../docs/releases.md")]
 
-use crate::changelog::{Changelog, GeneratedChangelog, KeepAChangelog};
+use crate::changelog::{AutomaticChangelog, Changelog, GeneratedChangelog};
 use crate::command;
 use crate::execution::{ExecutionContext, ExecutionProvider, LocalExecutionProvider, StepOutcome};
 use crate::git::{ReleaseRepository, RepositoryState};
@@ -421,7 +421,7 @@ impl ReleaseWorkflow {
                 package,
                 publisher,
                 store,
-                changelog: Arc::new(KeepAChangelog::default()),
+                changelog: Arc::new(AutomaticChangelog::default()),
                 changelog_path: "CHANGELOG.md".into(),
                 execution: Arc::new(LocalExecutionProvider),
                 clock: Arc::new(SystemClock::default()),
@@ -447,7 +447,25 @@ impl ReleaseWorkflow {
     }
 
     pub fn prepare_workflow(&self) -> Result<Workflow<ReleaseRequest, Packaged>> {
-        let components = Arc::new(self.components.clone());
+        self.prepare_with_components(self.resolved_components()?)
+    }
+
+    fn resolved_components(&self) -> Result<Arc<ReleaseComponents>> {
+        let mut components = self.components.clone();
+        if components.changelog.enabled()
+            && let Some(changelog) = components
+                .changelog
+                .resolve_file(&changelog_path(&components)?)?
+        {
+            components.changelog = changelog;
+        }
+        Ok(Arc::new(components))
+    }
+
+    fn prepare_with_components(
+        &self,
+        components: Arc<ReleaseComponents>,
+    ) -> Result<Workflow<ReleaseRequest, Packaged>> {
         Workflow::start()
             .then(
                 self.hooks
@@ -484,8 +502,8 @@ impl ReleaseWorkflow {
     }
 
     pub fn release_workflow(&self) -> Result<Workflow<ReleaseRequest, Completed>> {
-        let components = Arc::new(self.components.clone());
-        self.prepare_workflow()?
+        let components = self.resolved_components()?;
+        self.prepare_with_components(components.clone())?
             .then(
                 self.hooks
                     .preserve

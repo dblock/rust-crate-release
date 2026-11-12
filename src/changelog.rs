@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
 use semver::Version;
 
@@ -39,6 +40,11 @@ pub trait Changelog: Send + Sync {
         false
     }
 
+    /// Resolve an automatic provider once, before workflow mutation.
+    fn resolve_file(&self, _: &Path) -> Result<Option<Arc<dyn Changelog>>> {
+        Ok(None)
+    }
+
     fn release_file(
         &self,
         path: &Path,
@@ -46,6 +52,9 @@ pub trait Changelog: Send + Sync {
         date: &str,
         generated_notes: Option<&str>,
     ) -> Result<ChangelogEdit> {
+        if let Some(changelog) = self.resolve_file(path)? {
+            return changelog.release_file(path, version, date, generated_notes);
+        }
         if !self.enabled() {
             return self.release("", version, date, generated_notes);
         }
@@ -64,6 +73,9 @@ pub trait Changelog: Send + Sync {
     }
 
     fn next_file(&self, path: &Path, released: &Version, next: &Version) -> Result<()> {
+        if let Some(changelog) = self.resolve_file(path)? {
+            return changelog.next_file(path, released, next);
+        }
         if !self.enabled() {
             return Ok(());
         }
@@ -143,7 +155,7 @@ impl IntrideaChangelog {
     }
 }
 
-/// Keep a Changelog is the default handwritten convention.
+/// Keep a Changelog's `[Unreleased]` convention.
 #[derive(Clone, Debug, Default)]
 pub struct KeepAChangelog {
     template: ChangelogTemplate,
@@ -162,6 +174,92 @@ pub struct GeneratedChangelog;
 /// Retains release notes without reading or writing a changelog file.
 #[derive(Clone, Debug, Default)]
 pub struct NoChangelog;
+
+/// Detects a supported handwritten convention, or skips an absent file.
+#[derive(Clone, Debug, Default)]
+pub struct AutomaticChangelog {
+    template: ChangelogTemplate,
+}
+
+impl AutomaticChangelog {
+    pub fn new(template: ChangelogTemplate) -> Self {
+        Self { template }
+    }
+
+    fn select(&self, source: Option<&str>) -> Result<Arc<dyn Changelog>> {
+        let Some(source) = source else {
+            if self.template.placeholder.is_some() || !self.template.sections.is_empty() {
+                return Err(Error::invalid(
+                    "automatic changelog cannot apply handwritten templates without a file; create a supported changelog or remove placeholder and sections",
+                ));
+            }
+            return Ok(Arc::new(NoChangelog));
+        };
+        let document = MarkdownDocument::parse(source)?;
+        let mut keep = false;
+        let mut intridea = false;
+        for heading in document.headings() {
+            keep |= Convention::Keep.pending(heading);
+            if let Some((version, _)) = heading
+                .text
+                .strip_prefix('[')
+                .and_then(|text| text.split_once(']'))
+                && let Ok(version) = Version::parse(version)
+            {
+                keep |= Convention::Keep.dated(&heading.text, &version);
+            }
+            if let Some((version, _)) = heading.text.split_once(" (")
+                && let Ok(version) = Version::parse(version)
+            {
+                intridea |= Convention::Intridea.pending(heading)
+                    || Convention::Intridea.dated(&heading.text, &version);
+            }
+        }
+        match (keep, intridea) {
+            (true, false) => Ok(Arc::new(KeepAChangelog::new(self.template.clone()))),
+            (false, true) => {
+                if !self.template.sections.is_empty() {
+                    return Err(Error::invalid("Intridea sections are not configurable"));
+                }
+                Ok(Arc::new(IntrideaChangelog::new(
+                    self.template
+                        .placeholder
+                        .clone()
+                        .unwrap_or_else(|| "- Your contribution here.".into()),
+                )?))
+            }
+            _ => Err(Error::invalid(
+                "unknown or ambiguous automatic changelog format; set changelog-format to keep-a-changelog, intridea, or disabled in rcr.toml",
+            )),
+        }
+    }
+}
+
+impl Changelog for AutomaticChangelog {
+    fn resolve_file(&self, path: &Path) -> Result<Option<Arc<dyn Changelog>>> {
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => Some(source),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Some(self.select(source.as_deref())?))
+    }
+
+    fn release(
+        &self,
+        source: &str,
+        version: &Version,
+        date: &str,
+        generated_notes: Option<&str>,
+    ) -> Result<ChangelogEdit> {
+        self.select(Some(source))?
+            .release(source, version, date, generated_notes)
+    }
+
+    fn next(&self, source: &str, released: &Version, next: &Version) -> Result<String> {
+        self.select(Some(source))?.next(source, released, next)
+    }
+}
 
 impl Changelog for NoChangelog {
     fn enabled(&self) -> bool {
@@ -919,6 +1017,102 @@ mod tests {
                 .release(&next, &v("0.2.0"), "2026/11/11", Some("Conflicting notes"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn automatic_detects_handwritten_formats_through_release_development_and_recovery() -> Result {
+        let changelog = AutomaticChangelog::default();
+        for (source, released, pending) in [
+            (
+                "## [Unreleased]\n\n- Initial release.\n",
+                "## [0.1.0] - 2026-11-11",
+                "## [Unreleased]",
+            ),
+            (
+                "## 0.1.0 (Next)\n\n- Initial release.\n- Your contribution here.\n",
+                "## 0.1.0 (2026/11/11)",
+                "## 0.1.1 (Next)",
+            ),
+        ] {
+            let edit = changelog.release(source, &v("0.1.0"), "2026/11/11", None)?;
+            assert_eq!(edit.notes, "- Initial release.");
+            assert!(edit.source.contains(released));
+            let reused =
+                changelog.release(&edit.source, &v("0.1.0"), "2026/12/01", Some(&edit.notes))?;
+            assert_eq!(reused, edit);
+            let next = changelog.next(&edit.source, &v("0.1.0"), &v("0.1.1"))?;
+            assert!(next.contains(pending));
+            assert_eq!(
+                changelog
+                    .release(&next, &v("0.1.0"), "2026/12/01", Some(&edit.notes))?
+                    .source,
+                next,
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn automatic_skips_absent_files_but_rejects_empty_unknown_and_mixed_documents() -> Result {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("CHANGELOG.md");
+        let changelog = AutomaticChangelog::default();
+        let edit = changelog.release_file(&path, &v("0.1.0"), "2026/11/11", None)?;
+        assert_eq!(edit.notes, "Release 0.1.0.");
+        changelog.next_file(&path, &v("0.1.0"), &v("0.1.1"))?;
+        assert!(!path.exists());
+        for source in [
+            "",
+            "# My release notes\n\nA feature.\n",
+            "```markdown\n## [Unreleased]\n```\n\n> ## 0.1.0 (Next)\n",
+            "## [Unreleased]\n\n- A feature.\n\n## 0.1.0 (Next)\n\n- Your contribution here.\n",
+        ] {
+            std::fs::write(&path, source)?;
+            let error = changelog
+                .release_file(&path, &v("0.1.0"), "2026/11/11", None)
+                .unwrap_err();
+            assert!(error.to_string().contains("changelog-format"));
+            assert_eq!(std::fs::read_to_string(&path)?, source);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn automatic_applies_templates_only_to_compatible_existing_files() -> Result {
+        let changelog = AutomaticChangelog::new(ChangelogTemplate::new(
+            Some("* Contribute here.".into()),
+            vec!["Added".into()],
+        )?);
+        let source = "## [Unreleased]\n\n### Added\n\n- Feature.\n* Contribute here.\n";
+        let edit = changelog.release(source, &v("0.1.0"), "2026/11/11", None)?;
+        assert!(!edit.notes.contains("Contribute"));
+        assert!(
+            changelog
+                .next(&edit.source, &v("0.1.0"), &v("0.1.1"))?
+                .contains("* Contribute here.")
+        );
+        let directory = tempfile::tempdir()?;
+        assert!(
+            changelog
+                .release_file(
+                    &directory.path().join("missing.md"),
+                    &v("0.1.0"),
+                    "2026/11/11",
+                    None
+                )
+                .is_err()
+        );
+        assert!(
+            changelog
+                .release(
+                    "## 0.1.0 (Next)\n\n- Feature.\n* Contribute here.\n",
+                    &v("0.1.0"),
+                    "2026/11/11",
+                    None
+                )
+                .is_err()
+        );
+        Ok(())
     }
 
     #[test]

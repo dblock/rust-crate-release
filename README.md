@@ -5,11 +5,11 @@
 
 [![Test](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/test.yml) [![Lint](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/lint.yml) [![Package](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml/badge.svg)](https://github.com/dblock/rust-crate-release/actions/workflows/package.yml)
 
-Release your Rust crate from GitHub Actions. rcr tests your project, publishes to crates.io, updates the changelog, creates a Git tag and GitHub Release, and prepares the next version. Ported from [ruby-gem-release](https://github.com/dblock/ruby-gem-release) and [npm-package-release](https://github.com/dblock/npm-package-release).
+Release your Rust crate from GitHub Actions. rcr tests your project, publishes to crates.io, optionally updates the changelog, creates a Git tag and GitHub Release, and prepares the next version. Ported from [ruby-gem-release](https://github.com/dblock/ruby-gem-release) and [npm-package-release](https://github.com/dblock/npm-package-release).
 
 ## Usage
 
-You need a Cargo project on GitHub. No local rcr installation or `rcr.toml` is required. Set up the workflow and trusted publisher once; after that, update your release notes and run the workflow.
+You need a Cargo project on GitHub. No local rcr installation, `rcr.toml`, or changelog is required. Set up the workflow and trusted publisher once; after that, run the workflow when you are ready to release.
 
 ### 1. Add the Release Workflow
 
@@ -66,7 +66,9 @@ The workflow must be allowed to push commits to your default branch and create `
 
 ### 4. Update Changelog
 
-If you keep a changelog, add meaningful release notes to the `[Unreleased]` section of `CHANGELOG.md` before each release:
+**Skip this step if you do not keep a changelog.** By default, rcr detects Keep a Changelog or Intridea format in `CHANGELOG.md`. If the file is absent, it skips file updates and uses `Release X.Y.Z.` as numeric release notes. No configuration is needed.
+
+Add meaningful release notes to the `[Unreleased]` section of `CHANGELOG.md` before each release:
 
 ```markdown
 # Changelog
@@ -78,17 +80,11 @@ If you keep a changelog, add meaningful release notes to the `[Unreleased]` sect
 - Add widget serialization.
 ```
 
-Use this Keep a Changelog format by default. rcr gives the notes a version and date, then creates a fresh `[Unreleased]` section for your next changes. Other formats and generated notes are covered in [Changelogs](docs/changelogs.md).
-
-If you do not keep a changelog, disable file updates in `rcr.toml`:
-
-```toml
-changelog-format = "disabled"
-```
+rcr detects this Keep a Changelog format, gives the notes a version and date, then creates a fresh `[Unreleased]` section for your next changes. Unknown or mixed formats stop with configuration guidance before release edits. To leave an existing changelog untouched, set `changelog-format = "disabled"` in `rcr.toml`. Other formats and generated notes are covered in [Changelogs](docs/changelogs.md).
 
 ### 5. Run a Release
 
-Merge your release notes onto the default branch. On GitHub, select **Actions > Release > Run workflow**, choose the default branch, and click **Run workflow**.
+Merge your changes onto the default branch, including release notes if changelog updates are enabled. On GitHub, select **Actions > Release > Run workflow**, choose the default branch, and click **Run workflow**.
 
 Alternatively, dispatch with the GitHub CLI, replacing the repository and branch with yours:
 

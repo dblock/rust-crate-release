@@ -1,7 +1,8 @@
 //! Data-only configuration and the built-in release commands.
 
 use crate::changelog::{
-    ChangelogTemplate, GeneratedChangelog, IntrideaChangelog, KeepAChangelog, NoChangelog,
+    AutomaticChangelog, ChangelogTemplate, GeneratedChangelog, IntrideaChangelog, KeepAChangelog,
+    NoChangelog,
 };
 use crate::engine::{
     Analyzed, Captured, CapturedInputs, CommandValidator, Edited, Hosted, NextEdited, NextVersion,
@@ -102,6 +103,7 @@ pub enum Mode {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChangelogFormat {
+    Automatic,
     Disabled,
     KeepAChangelog,
     Intridea,
@@ -273,7 +275,7 @@ impl Configuration {
                 "generated changelogs do not accept handwritten templates",
             ));
         }
-        if matches!(config.changelog_format, Some(ChangelogFormat::Disabled))
+        if matches!(config.changelog_format(), ChangelogFormat::Disabled)
             && (config.placeholder.is_some() || !config.sections.is_empty())
         {
             return Err(Error::invalid(
@@ -446,6 +448,15 @@ impl PackagePublisher for CommandPublisher {
 }
 
 impl Configuration {
+    fn changelog_format(&self) -> ChangelogFormat {
+        match self.changelog_format.unwrap_or(ChangelogFormat::Automatic) {
+            ChangelogFormat::Automatic if matches!(self.workflow, Mode::Semantic) => {
+                ChangelogFormat::Generated
+            }
+            format => format,
+        }
+    }
+
     fn verifier(&self) -> Result<RegistryVerifier> {
         RegistryVerifier::new(
             self.verification_attempts,
@@ -773,26 +784,28 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
     if matches!(config.workflow, Mode::Semantic) {
         workflow = workflow.semantic(Arc::new(GitHistory::new((*repository).clone())));
     }
-    workflow.components.changelog = match config.changelog_format {
-        Some(ChangelogFormat::Disabled) => Arc::new(NoChangelog),
-        Some(ChangelogFormat::Intridea) => {
-            if !config.sections.is_empty() {
-                return Err(Error::invalid("Intridea sections are not configurable"));
+    workflow.components.changelog =
+        match config.changelog_format() {
+            ChangelogFormat::Automatic => Arc::new(AutomaticChangelog::new(
+                ChangelogTemplate::new(config.placeholder.clone(), config.sections.clone())?,
+            )),
+            ChangelogFormat::Disabled => Arc::new(NoChangelog),
+            ChangelogFormat::Intridea => {
+                if !config.sections.is_empty() {
+                    return Err(Error::invalid("Intridea sections are not configurable"));
+                }
+                Arc::new(IntrideaChangelog::new(
+                    config
+                        .placeholder
+                        .clone()
+                        .unwrap_or_else(|| "- Your contribution here.".into()),
+                )?)
             }
-            Arc::new(IntrideaChangelog::new(
-                config
-                    .placeholder
-                    .clone()
-                    .unwrap_or_else(|| "- Your contribution here.".into()),
-            )?)
-        }
-        Some(ChangelogFormat::Generated) => Arc::new(GeneratedChangelog),
-        _ if matches!(config.workflow, Mode::Semantic) => Arc::new(GeneratedChangelog),
-        _ => Arc::new(KeepAChangelog::new(ChangelogTemplate::new(
-            config.placeholder.clone(),
-            config.sections.clone(),
-        )?)),
-    };
+            ChangelogFormat::Generated => Arc::new(GeneratedChangelog),
+            ChangelogFormat::KeepAChangelog => Arc::new(KeepAChangelog::new(
+                ChangelogTemplate::new(config.placeholder.clone(), config.sections.clone())?,
+            )),
+        };
     let next = config.next()?;
     let verifier = config.verifier()?;
     workflow.components.changelog_path = config.changelog;

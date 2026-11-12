@@ -6,7 +6,7 @@ For file-editing callbacks, start with [Custom Hooks](#custom-hooks). Provider r
 
 ## Configure Providers
 
-Construct `engine::ReleaseWorkflow::new(repository, package, publisher, store)` with explicit `Arc` providers. Defaults are numeric releases, Keep a Changelog in `CHANGELOG.md`, UTC dates, real Cargo format/test/Clippy validation, next patch development, local execution/preservation, bounded registry verification, and no hosted release.
+Construct `engine::ReleaseWorkflow::new(repository, package, publisher, store)` with explicit `Arc` providers. Defaults are numeric releases, automatic changelog detection, UTC dates, real Cargo format/test/Clippy validation, next patch development, local execution/preservation, bounded registry verification, and no hosted release. `AutomaticChangelog` detects Keep a Changelog or Intridea and skips absent files. Assign `KeepAChangelog`, `IntrideaChangelog`, or `NoChangelog` to `components.changelog` for an explicit choice.
 
 Its `components` expose replaceable package, registry, repository, changelog, clock, validator, next-version policy, hosting, execution, artifact-preservation, verification, and diagnostic providers. `semantic(history)` selects Conventional Commits analysis and generated notes, with next-development changes disabled. Override components before constructing or invoking a workflow; existing compositions retain their captured component choices.
 
@@ -147,13 +147,13 @@ fn main() -> Result {
 
 The `prepare.after` hook runs after the engine updates the release manifest but **before validation, the release commit, packaging, and publication**. The `next.after` hook runs after publication and the release push, once the engine has updated the development manifest; its edits are validated, committed, and pushed in the next-development commit. Both read the current manifest so repeated calls write the same contents. Implement `before` instead of `after` to run before that stage's built-in operation.
 
-Commit the example, dependency/lockfile updates, and meaningful changelog notes. Follow the [local-publication prerequisites](cli.md#local-publication), including `CARGO_REGISTRY_TOKEN` and Git push authentication. From the project root on your clean default branch, run:
+Commit the example and dependency/lockfile updates. Follow the [local-publication prerequisites](cli.md#local-publication), including `CARGO_REGISTRY_TOKEN` and Git push authentication. From the project root on your clean default branch, run:
 
 ```sh
 cargo run --example release
 ```
 
-**This publishes and pushes a real release.** Replace `main` in the example if your default branch differs. The runner uses the library defaults: Keep a Changelog, next patch development, and no GitHub Release hosting. It does not read `rcr.toml`. This is a local runner, not a replacement for the [trusted-publishing workflow](actions.md).
+**This publishes and pushes a real release.** Replace `main` in the example if your default branch differs. The runner uses the library defaults: automatic changelog detection, next patch development, and no GitHub Release hosting. It does not read `rcr.toml`. This is a local runner, not a replacement for the [trusted-publishing workflow](actions.md).
 
 The `VERSION` file contains the released version in the release commit/archive and the next version in the development commit. If your manifest has a package `include` allowlist, include `VERSION`. To exercise only preparation without publication or pushing, replace `workflow.release(...)` with `workflow.prepare(...)`; this still edits, validates, commits, and tags locally. Preserve the resulting captured inputs explicitly before a later publication, as shown in [Configure Providers](#configure-providers).
 

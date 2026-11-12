@@ -197,6 +197,30 @@ fn disabled_changelog_preserves_existing_files_and_releases_without_any_path() -
     Ok(())
 }
 
+#[test]
+fn automatic_default_releases_existing_changelog_and_reconciles_development() -> Result {
+    let fixture = Fixture::new()?;
+    let engine = ReleaseWorkflow::new(
+        fixture.git.clone(),
+        fixture.package.clone(),
+        fixture.publisher.clone(),
+        fixture.store.clone(),
+    );
+    let output = engine.release(ReleaseRequest::default())?;
+    assert_eq!(output.notes(), "- Initial fixture.");
+    let path = fixture.project.root().join("CHANGELOG.md");
+    let next = fs::read_to_string(&path)?;
+    assert!(next.contains("## 0.1.1 (Next)"));
+    engine.release(ReleaseRequest {
+        captured: Some(output.captured().clone()),
+        ..ReleaseRequest::default()
+    })?;
+    assert_eq!(fs::read_to_string(path)?, next);
+    assert_eq!(fixture.publisher.publication_count(), 1);
+    fixture.git.assert_clean()?;
+    Ok(())
+}
+
 struct EditHook(PathBuf);
 
 struct FineHook {

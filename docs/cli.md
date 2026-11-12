@@ -25,7 +25,7 @@ For scripts, successful commands print one JSON object to stdout; progress and e
 
 ## Local Publication
 
-This is an advanced alternative to Actions. Start with a clean, up-to-date default-branch checkout and full Git history. Commit the intended version, `Cargo.lock`, and release notes. Configure Git identity and push authentication, and check that branch/tag rules permit release pushes.
+This is an advanced alternative to Actions. Start with a clean, up-to-date default-branch checkout and full Git history. Commit the intended version and `Cargo.lock`, and add meaningful notes if you keep a supported handwritten changelog. Configure Git identity and push authentication, and check that branch/tag rules permit release pushes.
 
 Supply a crates.io token privately as `CARGO_REGISTRY_TOKEN`. Unlike Cargo, rcr does not read credentials saved by `cargo login`: it uploads the archive it checked rather than calling `cargo publish`. For a GitHub remote, also authenticate with `gh auth login` or set `github-release = false` to skip GitHub Releases.
 
@@ -52,11 +52,15 @@ The file carries the original source/version between these commands; it is not n
 
 Create `rcr.toml` at your project root only if you want to change a default. For example, `next-version = "disabled"` stops rcr from advancing the manifest after publication.
 
+No changelog is required. Numeric releases automatically detect a supported handwritten format in the configured changelog file; if it is absent, they skip file updates and use `Release X.Y.Z.` as notes. Unknown or mixed formats stop before source edits with guidance to select a format or disable updates.
+
 | Setting | Use It To |
 | --- | --- |
 | `github-release = false` | Skip GitHub Release creation; still publish to crates.io and push the Git tag. |
 | `next-version = "disabled"` | Leave the manifest at the released version. Select the next version yourself before releasing again. |
-| `changelog-format = "disabled"` | Release without editing a changelog file. |
+| `changelog-format = "automatic"` | Detect Keep a Changelog or Intridea, or skip a missing file; this is the numeric default. |
+| `changelog-format = "keep-a-changelog"` | Require a specific handwritten format; `"intridea"` is also supported. |
+| `changelog-format = "disabled"` | Leave any changelog file untouched, without detecting or validating its format. |
 | `workflow = "semantic"` | Choose versions and notes from [commit messages](semantic.md). |
 | `manifest = "crates/widget/Cargo.toml"` | Select a workspace member with an explicit version. |
 | `default-branch = "main"` | Override automatic default-branch discovery. |
@@ -74,7 +78,7 @@ manifest = "Cargo.toml"
 remote = "origin"
 timezone = "UTC"
 changelog = "CHANGELOG.md"
-changelog-format = "keep-a-changelog"
+changelog-format = "automatic"
 next-version = "patch"
 validation = [
   ["cargo", "fmt", "--all", "--", "--check"],
@@ -87,7 +91,7 @@ verification-delay-seconds = 5
 
 These are numeric defaults; branch and repository discovery need no TOML entries. `manifest` explicitly selects one package, including a workspace member. Changelog paths must stay inside the Git root without symbolic-link traversal. `artifact-directory` optionally selects storage; the global `--artifact-directory` flag overrides it. Otherwise Git's `rcr` metadata directory is used, including for linked worktrees. A configured source-tree artifact directory must already be ignored.
 
-Numeric changelog formats are `keep-a-changelog` and `intridea`. Optional `placeholder` and `sections` configure Keep a Changelog templates; Intridea accepts a placeholder, defaults to `- Your contribution here.`, and does not accept sections. Semantic mode uses `workflow = "semantic"`, defaults to generated notes and disabled next development, and accepts `changelog-format = "generated"` if explicitly supplied. Either mode accepts `changelog-format = "disabled"` to avoid all changelog file access while retaining numeric fallback or captured semantic release notes. Generated and disabled changelogs reject handwritten template settings.
+Numeric changelog updates default to `automatic`. Set `keep-a-changelog` or `intridea` to require one format explicitly. Automatic detection uses the configured `changelog` path and rejects empty, unknown, or mixed-format files. Optional `placeholder` and `sections` configure Keep a Changelog templates, including when detected automatically; Intridea accepts a placeholder, defaults to `- Your contribution here.`, and does not accept sections. Templates require an existing file in automatic mode. Semantic mode uses `workflow = "semantic"`, defaults to generated notes and disabled next development, and treats `automatic` as `generated`. Either mode accepts `changelog-format = "disabled"` to avoid all changelog file access while retaining numeric fallback or captured semantic release notes. Generated and disabled changelogs reject handwritten template settings.
 
 `next-version` accepts `patch`, `disabled`, or an exact stable increasing SemVer. Explicit release overrides must also be stable; numeric releases cannot decrease the original manifest version. Verification bounds are 1–60 attempts and 0–60 seconds between absence-only retries.
 
