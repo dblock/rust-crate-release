@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.0 (Next)
+## 0.1.1 (Next)
+
+- Your contribution here.
+
+## 0.1.0 (2026/11/12)
 
 - [#2](https://github.com/dblock/rust-crate-release/pull/2): Add typed workflows, lifecycle hooks, execution providers, source-preserving changelogs, and semantic release analysis - [@dblock](https://github.com/dblock).
 - [#4](https://github.com/dblock/rust-crate-release/pull/4): Add cross-platform exact-artifact Cargo/crates.io providers, guarded Git/hosting operations, durable diagnostics, semantic history discovery, and isolated consumer testing helpers - [@dblock](https://github.com/dblock).
@@ -24,4 +28,3 @@
 - [#22](https://github.com/dblock/rust-crate-release/pull/22): Simplify release adoption with step-by-step README setup, Cargo first publication, trusted publishing, version examples, and practical configuration, changelog, and recovery guides, with advanced hooks documented separately - [@dblock](https://github.com/dblock).
 - [#25](https://github.com/dblock/rust-crate-release/pull/25): Remove the logo background and shadow and align its visible height with sibling release-tool logos - [@dblock](https://github.com/dblock).
 - [#24](https://github.com/dblock/rust-crate-release/pull/24): Automatically detect supported handwritten changelogs or skip missing files, reject unknown or ambiguous formats before source edits, and preserve explicit overrides and semantic generated notes - [@dblock](https://github.com/dblock).
-- Your contribution here.
