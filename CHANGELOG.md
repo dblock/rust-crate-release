@@ -18,4 +18,5 @@
 - [#17](https://github.com/dblock/rust-crate-release/pull/17): Load trusted project Rust runners through CLI configuration and stock Actions while preserving typed hooks and artifact verification - [@dblock](https://github.com/dblock).
 - [#18](https://github.com/dblock/rust-crate-release/pull/18): Add terminal success/failure callbacks and credential-free actual Actions step/run context, including external setup failures - [@dblock](https://github.com/dblock).
 - [#19](https://github.com/dblock/rust-crate-release/pull/19): Configure Actions toolchains, Git identity, and trusted phase commands with exact-byte publication verification - [@dblock](https://github.com/dblock).
+- [#20](https://github.com/dblock/rust-crate-release/pull/20): Add a configured consumer release-testing facade with isolated registry/hosting, project runners, and exact remote-file assertions - [@dblock](https://github.com/dblock).
 - Your contribution here.

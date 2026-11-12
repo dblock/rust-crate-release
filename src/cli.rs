@@ -44,6 +44,9 @@ pub struct Cli {
     /// Explicit isolated publication adapter; never auto-selected.
     #[arg(long, global = true, hide = true)]
     pub test_registry: Option<PathBuf>,
+    /// Explicit isolated hosting adapter; requires isolated publication.
+    #[arg(long, global = true, hide = true, requires = "test_registry")]
+    pub test_host: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -571,6 +574,7 @@ fn forward_arguments(cli: &Cli, root: &Path) -> Vec<std::ffi::OsString> {
     option("--config", cli.config.as_deref());
     option("--artifact-directory", cli.artifact_directory.as_deref());
     option("--test-registry", cli.test_registry.as_deref());
+    option("--test-host", cli.test_host.as_deref());
     if let Some(id) = cli.github_artifact_id {
         args.extend(["--github-artifact-id".into(), id.to_string().into()]);
     }
@@ -736,7 +740,11 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
     if let Some(repository) = config.github_repository {
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }
-    configure(&mut workflow)?;
+    if let Some(path) = cli.test_host {
+        workflow.components.host = Some(Arc::new(crate::testing::DirectoryReleaseHost::new(
+            root.join(path),
+        )?));
+    }
     if let Some(argv) = phase_command("RCR_PREPARE_COMMAND", config.prepare_command)? {
         workflow.hooks.prepare = workflow.hooks.prepare.with(EditCommand {
             root: root.clone(),
@@ -749,7 +757,12 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
             argv,
         });
     }
-    if let Some(argv) = phase_command("RCR_PUBLISH_COMMAND", config.publish_command)? {
+    let configured_publisher = if cli.test_registry.is_some() {
+        None
+    } else {
+        config.publish_command
+    };
+    if let Some(argv) = phase_command("RCR_PUBLISH_COMMAND", configured_publisher)? {
         workflow.components.publisher = Arc::new(CommandPublisher {
             root: root.clone(),
             argv,
@@ -765,6 +778,7 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
                 failure: config.failure,
             }));
     }
+    configure(&mut workflow)?;
     if let Some(path) = args.save_inputs {
         workflow.hooks.analyze = workflow.hooks.analyze.with(SaveInputs(root.join(path)));
     }
