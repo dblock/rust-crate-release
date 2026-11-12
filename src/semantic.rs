@@ -62,7 +62,8 @@ pub trait SemanticNotes: Send + Sync {
 }
 
 /// Optional rule selectors use logical AND; matching rules replace default behavior.
-/// `release: None` suppresses a commit. `*` and `?` are the only wildcards.
+/// `release: None` suppresses a commit. Selectors support `*`, `?`, character
+/// classes/ranges, class negation (`!` or `^`), and backslash escaping.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReleaseRule {
     pub commit_type: Option<String>,
@@ -192,24 +193,57 @@ impl ReleaseRule {
 }
 
 fn glob_matches(pattern: &str, value: &str) -> bool {
-    let value: Vec<_> = value.chars().collect();
-    let mut matched = vec![false; value.len() + 1];
-    matched[0] = true;
-    for character in pattern.chars() {
-        if character == '*' {
-            for index in 1..matched.len() {
-                let previous = matched[index - 1];
-                matched[index] |= previous;
+    use std::fmt::Write;
+
+    let mut expression = String::from("(?s)\\A");
+    let mut characters = pattern.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '*' => expression.push_str(".*"),
+            '?' => expression.push('.'),
+            '\\' => {
+                let Some(literal) = characters.next() else {
+                    return false;
+                };
+                expression.push_str(&regex::escape(&literal.to_string()));
             }
-        } else {
-            for index in (1..matched.len()).rev() {
-                matched[index] =
-                    matched[index - 1] && (character == '?' || character == value[index - 1]);
+            '[' => {
+                expression.push('[');
+                if matches!(characters.peek(), Some('!' | '^')) {
+                    characters.next();
+                    expression.push('^');
+                }
+                let mut first = true;
+                loop {
+                    let Some(character) = characters.next() else {
+                        return false;
+                    };
+                    if character == ']' && !first {
+                        break;
+                    }
+                    first = false;
+                    let escaped = character == '\\';
+                    let character = if escaped {
+                        let Some(literal) = characters.next() else {
+                            return false;
+                        };
+                        literal
+                    } else {
+                        character
+                    };
+                    if character == '-' && !escaped {
+                        expression.push('-');
+                    } else {
+                        write!(expression, "\\x{{{:x}}}", character as u32).unwrap();
+                    }
+                }
+                expression.push(']');
             }
-            matched[0] = false;
+            literal => expression.push_str(&regex::escape(&literal.to_string())),
         }
     }
-    matched[value.len()]
+    expression.push_str("\\z");
+    regex::Regex::new(&expression).is_ok_and(|matcher| matcher.is_match(value))
 }
 
 fn parse_commit(commit: &SemanticCommit) -> ParsedCommit {
@@ -839,7 +873,7 @@ mod tests {
             ReleaseRule {
                 commit_type: Some("docs".to_owned()),
                 scope: Some("pub*".to_owned()),
-                subject: Some("Document ?🦀[API]".to_owned()),
+                subject: Some(r"Document ?🦀\[API\]".to_owned()),
                 release: Some(ReleaseType::Patch),
                 ..ReleaseRule::default()
             },
@@ -887,6 +921,45 @@ mod tests {
         assert_eq!(
             multiple.analyze(&[commit(1, "docs: Expand")]).unwrap(),
             Some(ReleaseType::Major)
+        );
+    }
+
+    #[test]
+    fn selectors_support_classes_ranges_negation_and_escaped_metacharacters() {
+        for (pattern, value, expected) in [
+            ("[a-c]?", "bé", true),
+            ("[!a-c]*", "dévelop", true),
+            ("[^a-c]*", "api", false),
+            (r"literal\*\?\[x\]", "literal*?[x]", true),
+            (r"[a\-c]", "-", true),
+            ("[]]", "]", true),
+            ("{a,b}", "a", false),
+            ("{a,b}", "{a,b}", true),
+            ("[", "[", false),
+            ("[z-a]", "z", false),
+            ("trailing\\", "trailing\\", false),
+            ("*", ".hidden/path\nline", true),
+        ] {
+            assert_eq!(glob_matches(pattern, value), expected, "{pattern:?}");
+        }
+        let analyzer = ConventionalCommits::new(vec![ReleaseRule {
+            commit_type: Some("[df]*".into()),
+            scope: Some("[!i]*".into()),
+            subject: Some(r"Document \[API\] v[1-3]".into()),
+            release: Some(ReleaseType::Patch),
+            ..ReleaseRule::default()
+        }]);
+        assert_eq!(
+            analyzer
+                .analyze(&[commit(1, "docs(public): Document [API] v2")])
+                .unwrap(),
+            Some(ReleaseType::Patch)
+        );
+        assert_eq!(
+            analyzer
+                .analyze(&[commit(1, "docs(internal): Document [API] v2")])
+                .unwrap(),
+            None
         );
     }
 
