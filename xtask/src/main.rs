@@ -1,5 +1,6 @@
 mod docs;
 mod package;
+mod setup;
 
 use std::error::Error;
 use std::path::Path;
@@ -22,6 +23,7 @@ fn run(root: &Path, program: &str, args: &[&str]) -> Result {
 fn execute() -> Result {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     match std::env::args().nth(1).as_deref() {
+        Some("setup") => setup::check(root)?,
         Some("lint") => {
             run(root, "cargo", &["fmt", "--all", "--", "--check"])?;
             run(
@@ -51,7 +53,7 @@ fn execute() -> Result {
             run(root, "actionlint", &[])?;
         }
         Some("package") => package::check(root)?,
-        _ => return Err("usage: cargo xtask <lint|package>".into()),
+        _ => return Err("usage: cargo xtask <setup|lint|package>".into()),
     }
     Ok(())
 }

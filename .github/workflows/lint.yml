@@ -22,18 +22,7 @@ jobs:
           components: rustfmt, clippy
       - name: Cache Rust Dependencies
         uses: Swatinem/rust-cache@v2.9.3
-      - name: Install Documentation Tools
-        run: |
-          cargo install --locked rumdl --version 0.3.3
-          cargo install --locked typos-cli --version 1.52.2
-      - name: Install Actionlint
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download v1.7.12 --repo rhysd/actionlint \
-            --pattern actionlint_1.7.12_linux_amd64.tar.gz --dir "$RUNNER_TEMP"
-          tar -xzf "$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz" \
-            -C "$RUNNER_TEMP" actionlint
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Install Validation Tools
+        run: cargo xtask setup
       - name: Run Lint
         run: cargo xtask lint

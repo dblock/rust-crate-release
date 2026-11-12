@@ -8,6 +8,11 @@ on:
         required: false
         default: '1.99.1'
         type: string
+      setup-command:
+        description: Optional trusted dependency/tool setup command as JSON argv
+        required: false
+        default: ''
+        type: string
       git-user-name:
         description: Release commit author name
         required: false
@@ -125,6 +130,7 @@ jobs:
         with:
           root: consumer
           toolchain: ${{ inputs.toolchain }}
+          setup-command: ${{ inputs.setup-command }}
           validate-command: ${{ inputs.validate-command }}
           prepare-command: ${{ inputs.prepare-command }}
           test-command: ${{ inputs.test-command }}

@@ -48,6 +48,8 @@ Remove the token even after a failure, and reconcile actual outputs before retry
 
 After the crate exists on crates.io, follow the [consumer setup guide](docs/actions.md) for the `release` environment, compatible branch/tag rules, and a per-crate trusted publisher. For this repository, publisher identity uses owner `dblock`, repository `rust-crate-release`, caller workflow `publish.yml`, and environment `release`. The manual [Publish workflow](.github/workflows/publish.yml) invokes the local reusable release workflow with `tool-ref: github.sha`, so the tool and project runner come from the reviewed dispatched commit rather than a moving external ref. Only dispatch it separately after authorizing a real release and confirming the external settings.
 
+The caller runs `cargo xtask setup` through `setup-command`, before release preparation, to install the pinned rumdl, typos-cli, and actionlint tools needed by this repository's full validation. Lint CI uses the same Rust setup implementation and tool versions. These are maintenance dependencies, not requirements imposed on other consumers.
+
 The caller needs `actions: read`, `contents: write`, and `id-token: write`. rcr performs the OIDC exchange and short-lived token cleanup itself; do not add a separate authentication action or set `CARGO_REGISTRY_TOKEN` in the automated job. Pin the caller's reusable-workflow and `tool-ref` references together.
 
 Review protection changes separately. Release automation needs direct pushes of release metadata and the next development version, not PRs for those commits. Removing a PR requirement permits direct pushes by all writers, not just automation; ordinary development remains PR-based. Retain active force-push and deletion protections with no bypass actors.

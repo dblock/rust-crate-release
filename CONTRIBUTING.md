@@ -4,13 +4,13 @@ Read [Design](DESIGN.md) and [Agent Instructions](AGENTS.md) before making chang
 
 ## Setup and Validation
 
-Install [rustup](https://rustup.rs), Git, and [actionlint 1.7.12](https://github.com/rhysd/actionlint/releases/tag/v1.7.12) on your PATH. The toolchain file selects Rust 1.99.1 with rustfmt, Clippy, and LLVM tools; the crate requires Rust 1.99.1 or later. On macOS, `brew install actionlint` provides the checker; verify its version. Install the verified stable Rust maintenance tools:
+Install [rustup](https://rustup.rs), Git, curl, and tar on your PATH. The toolchain file selects Rust 1.99.1 with rustfmt, Clippy, and LLVM tools; the crate requires Rust 1.99.1 or later. Install the pinned validation tools using the same Rust setup command as CI and release publishing:
 
 ```sh
-cargo install --locked rumdl --version 0.3.3
-cargo install --locked typos-cli --version 1.52.2
-cargo install --locked cargo-llvm-cov --version 0.9.1
+cargo xtask setup
 ```
+
+Setup keeps matching tool versions, installs missing or different versions of rumdl and typos-cli with Cargo, and downloads actionlint into Cargo's bin directory, which must be on PATH. Tool versions and installation commands live in `xtask/src/setup.rs`. For coverage, also install `cargo-llvm-cov` with `cargo install --locked cargo-llvm-cov --version 0.9.1`.
 
 Run these commands from the repository root:
 
