@@ -21,6 +21,10 @@ pub struct ChangelogEdit {
 
 /// A changelog is a pure transformation until its file helpers are called.
 pub trait Changelog: Send + Sync {
+    fn enabled(&self) -> bool {
+        true
+    }
+
     fn release(
         &self,
         source: &str,
@@ -42,6 +46,9 @@ pub trait Changelog: Send + Sync {
         date: &str,
         generated_notes: Option<&str>,
     ) -> Result<ChangelogEdit> {
+        if !self.enabled() {
+            return self.release("", version, date, generated_notes);
+        }
         let source = match std::fs::read_to_string(path) {
             Ok(source) => source,
             Err(error)
@@ -57,6 +64,9 @@ pub trait Changelog: Send + Sync {
     }
 
     fn next_file(&self, path: &Path, released: &Version, next: &Version) -> Result<()> {
+        if !self.enabled() {
+            return Ok(());
+        }
         let source = std::fs::read_to_string(path)?;
         let updated = self.next(&source, released, next)?;
         write_changed(path, &source, &updated)
@@ -148,6 +158,39 @@ impl KeepAChangelog {
 /// Dated sections containing immutable, captured semantic notes.
 #[derive(Clone, Debug, Default)]
 pub struct GeneratedChangelog;
+
+/// Retains release notes without reading or writing a changelog file.
+#[derive(Clone, Debug, Default)]
+pub struct NoChangelog;
+
+impl Changelog for NoChangelog {
+    fn enabled(&self) -> bool {
+        false
+    }
+
+    fn release(
+        &self,
+        source: &str,
+        version: &Version,
+        date: &str,
+        generated_notes: Option<&str>,
+    ) -> Result<ChangelogEdit> {
+        validate_stable(version)?;
+        validate_date(date)?;
+        let notes = generated_notes
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("Release {version}."));
+        validate_notes(&notes, None)?;
+        Ok(ChangelogEdit {
+            source: source.to_owned(),
+            notes,
+        })
+    }
+
+    fn next(&self, source: &str, _: &Version, _: &Version) -> Result<String> {
+        Ok(source.to_owned())
+    }
+}
 
 #[derive(Clone, Copy)]
 enum Convention {

@@ -14,6 +14,12 @@ Matching existing release sections are reused without changing their dates; supp
 
 `GeneratedChangelog` requires meaningful captured notes through `release(..., Some(notes))`. Empty source or a missing file starts with `# Changelog`; a dated level-two section is inserted before existing level-two history. Matching notes reuse the existing section without date changes. Conflicting notes and duplicate release headings fail before writing. `next` leaves the document unchanged and never creates a fake contribution placeholder.
 
+## Disabled Changelogs
+
+Set `changelog-format = "disabled"` in `rcr.toml`, or assign `Arc::new(NoChangelog)` to `workflow.components.changelog` after selecting numeric or semantic mode. The engine does not resolve, read, create, or modify any changelog path, including during next-development preparation and recovery. Existing files are left untouched. Handwritten template settings are rejected with this configuration.
+
+Numeric releases retain the note `Release X.Y.Z.` for receipts and hosted releases. Semantic releases retain the captured generated notes and still validate their source-bound decision; disabling the file does not disable semantic analysis or note verification. `NoChangelog` file helpers are also no-ops for filesystem access.
+
 ## Markdown Boundaries
 
 `MarkdownDocument` owns UTF-8 source and byte offsets obtained from the Markdown parser. Only actual top-level ATX headings define editable sections; fenced code, lists, quotes, HTML examples, and setext headings cannot impersonate release headings. Unrelated Markdown and LF or CRLF line endings remain intact; mixed or bare-carriage-return line endings fail.

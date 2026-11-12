@@ -139,6 +139,64 @@ fn numeric_release_reconciles_real_outputs_and_verifies_after_manifest_advances(
     Ok(())
 }
 
+#[test]
+fn disabled_changelog_preserves_existing_files_and_releases_without_any_path() -> Result {
+    use crate::changelog::NoChangelog;
+
+    for semantic in [false, true] {
+        let mut fixture = Fixture::new()?;
+        let path = fixture.project.root().join("CHANGELOG.md");
+        if semantic {
+            fs::remove_file(&path)?;
+            fixture.engine = fixture
+                .engine
+                .semantic(Arc::new(GitHistory::new((*fixture.git).clone())));
+            fixture.engine.components.next_version = Arc::new(NextVersion::Patch);
+            fixture.engine.components.changelog_path = "absent-parent/CHANGELOG.md".into();
+        } else {
+            fs::write(&path, "Not a valid changelog.\n")?;
+        }
+        let original = fs::read(&path).ok();
+        let tree = fixture.git.stage_changes()?;
+        fixture
+            .git
+            .commit(&tree, "feat: release without a changelog")?;
+        command::run(fixture.project.root(), "git", &["push", "origin", "master"])?;
+        fixture.engine.components.changelog = Arc::new(NoChangelog);
+        let output = fixture.engine.release(ReleaseRequest::default())?;
+        assert_eq!(fs::read(&path).ok(), original);
+        assert!(output.notes().contains(if semantic {
+            "release without a changelog"
+        } else {
+            "Release 0.1.0."
+        }));
+        assert!(matches!(
+            output.verification(),
+            Verification::Verified { .. }
+        ));
+        assert!(output.development_commit().is_some());
+        fixture.git.assert_clean()?;
+        fixture.engine.release(ReleaseRequest {
+            captured: Some(output.captured().clone()),
+            ..ReleaseRequest::default()
+        })?;
+        assert_eq!(fixture.publisher.publication_count(), 1);
+        assert_eq!(fs::read(&path).ok(), original);
+        NoChangelog.release_file(
+            fixture.project.root(),
+            &Version::new(0, 1, 0),
+            "2026/11/11",
+            None,
+        )?;
+        NoChangelog.next_file(
+            fixture.project.root(),
+            &Version::new(0, 1, 0),
+            &Version::new(0, 1, 1),
+        )?;
+    }
+    Ok(())
+}
+
 struct EditHook(PathBuf);
 impl crate::hooks::LifecycleHook<Analyzed, Edited> for EditHook {
     fn id(&self) -> &str {
