@@ -6,7 +6,7 @@
 
 `ConventionalCommits` recognizes `type(scope): subject` with optional scopes and `!`, full multiline bodies, and `BREAKING CHANGE:` or `BREAKING-CHANGE:` trailers. Features select minor; fixes, performance changes, and uncancelled reverts select patch; breaking changes select major even from `0.x`. Other commits alone do not release. Original/revert pairs cancel, reverts of reverts restore the original effect, and ambiguous abbreviated reverted SHAs fail.
 
-`ConventionalCommits::new(rules)` replaces defaults for commits matching any rule. Optional type, scope, subject, breaking, and revert selectors are combined; string selectors support literal text plus `*` and `?`. Matching rules select their highest release type, while `release: None` suppresses a change. Cancelled commits cannot be restored by a rule.
+`ConventionalCommits::new(rules)` replaces defaults for commits matching any rule. Optional type, scope, subject, breaking, and revert selectors are combined; string selectors support `*`, `?`, character classes (`[abc]`), ranges (`[a-z]`), negation (`[!a-z]` or `[^a-z]`), and backslash escaping (`r"\[API\]"` matches literal brackets in a Rust string). Matching is case-sensitive and covers the whole value; wildcards retain their existing Unicode, newline, slash, and leading-dot behavior. Braces are literal, not alternatives; malformed classes or a trailing escape do not match. Matching rules select their highest release type, while `release: None` suppresses a change. Cancelled commits cannot be restored by a rule.
 
 ## Version Selection
 
