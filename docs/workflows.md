@@ -40,7 +40,7 @@ Failure observers are all attempted, even if one fails. Their diagnostic failure
 
 `LifecycleHook<Input, Output>` receives a borrowed input before the operation and a borrowed output afterward, plus execution metadata. Add hook instances with `LifecycleHooks::default().with(hook)`, then `wrap(step)` before composing. Registries are immutable; extending one does not change an earlier registry. Before and after hooks run in registration order, not reverse stack order.
 
-Hook errors stop execution and retain the original error as their source, adding the stage identifier, before/after timing, hook identifier, and registration index. Hooks are trusted Rust code, not a sandbox: borrowed inputs prevent ordinary field mutation but cannot prevent arbitrary filesystem access. Built-in release steps will enforce file/index edit boundaries independently of these generic adapters.
+Hook errors stop execution and retain the original error as their source, adding the stage identifier, before/after timing, hook identifier, and registration index. Hooks are trusted Rust code, not a sandbox: borrowed inputs prevent ordinary field mutation but cannot prevent arbitrary filesystem access. Built-in release steps enforce file/index edit boundaries independently of these generic adapters.
 
 ## Select an Execution Provider
 
