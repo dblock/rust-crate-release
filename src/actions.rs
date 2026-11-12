@@ -69,7 +69,11 @@ fn output(name: &str, value: &str) -> Result {
     Ok(())
 }
 
-pub(crate) fn run(cli: &Cli, mode: ActionCommand) -> Result<Value> {
+pub(crate) fn run(
+    cli: &Cli,
+    mode: ActionCommand,
+    configure: &dyn Fn(&mut crate::engine::ReleaseWorkflow) -> Result,
+) -> Result<Value> {
     guard(&|key| std::env::var(key).ok())?;
     let root = dunce::canonicalize(&cli.root)?;
     let git = Git::new(&root, environment("RCR_DEFAULT_BRANCH")?, "origin")?;
@@ -115,7 +119,7 @@ pub(crate) fn run(cli: &Cli, mode: ActionCommand) -> Result<Value> {
             save_inputs: None,
         })
     };
-    let completed = crate::cli::run(command)?;
+    let completed = crate::cli::run_with(command, configure)?;
     for name in ["name", "version", "archive", "checksum"] {
         output(
             name,

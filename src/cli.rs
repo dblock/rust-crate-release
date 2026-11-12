@@ -108,6 +108,7 @@ pub enum ChangelogFormat {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Configuration {
+    pub runner: Option<Vec<String>>,
     pub workflow: Mode,
     pub manifest: PathBuf,
     pub default_branch: String,
@@ -128,6 +129,7 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
+            runner: None,
             workflow: Mode::Numeric,
             manifest: "Cargo.toml".into(),
             default_branch: "master".into(),
@@ -168,6 +170,13 @@ impl Configuration {
             return Err(Error::invalid(
                 "configuration requires nonempty validation argv",
             ));
+        }
+        if config
+            .runner
+            .as_ref()
+            .is_some_and(|argv| argv.first().is_none_or(String::is_empty))
+        {
+            return Err(Error::invalid("runner requires nonempty program argv"));
         }
         match (config.workflow, config.changelog_format) {
             (Mode::Numeric, Some(ChangelogFormat::Generated))
@@ -337,8 +346,135 @@ fn archive_option(root: &Path, explicit: Option<PathBuf>) -> Option<PathBuf> {
 
 /// Runs a built-in command. Successful output is one JSON value; progress uses stderr.
 pub fn run(cli: Cli) -> Result<Value> {
+    let root = dunce::canonicalize(&cli.root)?;
+    let config_path = cli.config.clone().or_else(|| {
+        std::env::var_os("RCR_CONFIG")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    });
+    let config = Configuration::load(&root, config_path.as_deref())?;
+    let runner = std::env::var("RCR_RUNNER")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            serde_json::from_str::<Vec<String>>(&value)
+                .map_err(|_| Error::invalid("RCR_RUNNER must be JSON argv"))
+        })
+        .transpose()?
+        .or(config.runner);
+    if let Some(argv) = runner {
+        if std::env::var_os("RCR_RUNNER_ACTIVE").is_some() {
+            return Err(Error::invalid(
+                "project runners must call cli::main_with or cli::run_with",
+            ));
+        }
+        let (program, prefix) = argv
+            .split_first()
+            .filter(|(program, _)| !program.is_empty())
+            .ok_or_else(|| Error::invalid("runner requires nonempty program argv"))?;
+        let output = std::process::Command::new(program)
+            .args(prefix)
+            .args(forward_arguments(&cli, &root))
+            .current_dir(&root)
+            .env("RCR_RUNNER_ACTIVE", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()?;
+        std::io::stderr().write_all(&output.stderr)?;
+        if !output.status.success() {
+            return Err(Error::invalid(format!(
+                "project runner failed ({})",
+                output.status
+            )));
+        }
+        return serde_json::from_slice(&output.stdout)
+            .map_err(|_| Error::invalid("project runner must return one JSON value"));
+    }
+    run_with(cli, &|_| Ok(()))
+}
+
+fn forward_arguments(cli: &Cli, root: &Path) -> Vec<std::ffi::OsString> {
+    let mut args = vec!["--root".into(), root.as_os_str().to_owned()];
+    let mut option = |flag: &str, value: Option<&Path>| {
+        if let Some(value) = value {
+            args.extend([flag.into(), value.as_os_str().to_owned()]);
+        }
+    };
+    option("--config", cli.config.as_deref());
+    option("--artifact-directory", cli.artifact_directory.as_deref());
+    option("--test-registry", cli.test_registry.as_deref());
+    if let Some(id) = cli.github_artifact_id {
+        args.extend(["--github-artifact-id".into(), id.to_string().into()]);
+    }
+    if let Some(endpoint) = &cli.test_artifact_api {
+        args.extend(["--test-artifact-api".into(), endpoint.into()]);
+    }
+    match &cli.command {
+        Command::Actions { command } => args.extend([
+            "actions".into(),
+            match command {
+                crate::actions::ActionCommand::Guard => "guard",
+                crate::actions::ActionCommand::Prepare => "prepare",
+                crate::actions::ActionCommand::Release => "release",
+            }
+            .into(),
+        ]),
+        Command::Prepare(release) | Command::Release(release) => {
+            args.push(
+                if matches!(cli.command, Command::Prepare(_)) {
+                    "prepare"
+                } else {
+                    "release"
+                }
+                .into(),
+            );
+            if let Some(version) = &release.release_version {
+                args.extend(["--release-version".into(), version.to_string().into()]);
+            }
+            for (flag, value) in [
+                ("--archive", &release.archive),
+                ("--inputs", &release.inputs),
+                ("--save-inputs", &release.save_inputs),
+            ] {
+                if let Some(path) = value {
+                    args.extend([flag.into(), path.as_os_str().to_owned()]);
+                }
+            }
+        }
+        Command::Verify {
+            name,
+            release_version,
+            archive,
+        } => args.extend([
+            "verify".into(),
+            "--name".into(),
+            name.into(),
+            "--release-version".into(),
+            release_version.to_string().into(),
+            "--archive".into(),
+            archive.as_os_str().to_owned(),
+        ]),
+    }
+    args
+}
+
+/// Project runner entry point retaining stock parsing, output, and safety checks.
+pub fn main_with(configure: impl Fn(&mut ReleaseWorkflow) -> Result) -> std::process::ExitCode {
+    match run_with(Cli::parse(), &configure) {
+        Ok(output) => {
+            println!("{output}");
+            std::process::ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("rcr: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+/// Configures trusted project providers/hooks without replacing CLI orchestration.
+pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) -> Result<Value> {
     if let Command::Actions { command } = &cli.command {
-        return crate::actions::run(&cli, *command);
+        return crate::actions::run(&cli, *command, configure);
     }
     let root = dunce::canonicalize(&cli.root)?;
     let config = Configuration::load(&root, cli.config.as_deref())?;
@@ -422,6 +558,7 @@ pub fn run(cli: Cli) -> Result<Value> {
     if let Some(repository) = config.github_repository {
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }
+    configure(&mut workflow)?;
     if let Some(path) = args.save_inputs {
         workflow.hooks.analyze = workflow.hooks.analyze.with(SaveInputs(root.join(path)));
     }

@@ -57,7 +57,7 @@ Fine-grained `tag: LifecycleHooks<Committed, Committed>` hooks surround local ta
 
 `commit_next: LifecycleHooks<NextEdited, Development>` and `push_next: LifecycleHooks<Development, Development>` surround the validated development commit and push separately. They do not run when next development is disabled. These observation hooks must not edit source or move refs; only preparation/next edit hooks may edit files. Hook failures preserve existing outputs and stop subsequent mutations, including a failed development commit after-hook stopping the development push.
 
-The [README's runnable example](../README.md#custom-hooks) keeps a `VERSION` file synchronized with the manifest, registers both hook instances, and explains real publication versus preparation only. Add the library as a development dependency and run your own example from the project root; built-in CLI/Actions configuration does not discover Rust hooks.
+The [README's runnable example](../README.md#custom-hooks) keeps a `VERSION` file synchronized with the manifest, registers both hook instances, and explains real publication versus preparation only. Add the library as a development dependency and run your own example from the project root, or register those hooks through a [project runner](cli.md#project-runners) selected by stock CLI/Actions configuration.
 
 | Hook | Runs | Source Edit Result |
 | --- | --- | --- |

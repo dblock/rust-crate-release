@@ -14,6 +14,9 @@ inputs:
   version:
     description: Optional explicit stable release version
     default: ''
+  runner:
+    description: Optional trusted project runner as JSON argv
+    default: ''
 outputs:
   name:
     description: Released crate name
@@ -56,6 +59,7 @@ runs:
       env:
         RCR_ROOT: ${{ inputs.root }}
         RCR_CONFIG: ${{ inputs.config }}
+        RCR_RUNNER: ${{ inputs.runner }}
         RCR_VERSION: ${{ inputs.version }}
         RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         RUSTUP_TOOLCHAIN: '1.99.1'
@@ -80,6 +84,7 @@ runs:
       env:
         RCR_ROOT: ${{ inputs.root }}
         RCR_CONFIG: ${{ inputs.config }}
+        RCR_RUNNER: ${{ inputs.runner }}
         RCR_ARTIFACT_ID: ${{ steps.preserve.outputs.artifact-id }}
         RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         GITHUB_TOKEN: ${{ github.token }}
