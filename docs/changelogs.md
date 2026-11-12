@@ -2,7 +2,9 @@
 
 ## Choose a Format
 
-By default, add release notes to `CHANGELOG.md` in Keep a Changelog format:
+Numeric releases use `changelog-format = "automatic"` by default; no configuration is needed. If `CHANGELOG.md` exists, rcr detects Keep a Changelog or Intridea format. If the file is absent, it skips changelog updates and uses `Release X.Y.Z.` as notes. Neither case disables GitHub Releases or the next version bump.
+
+For Keep a Changelog, add release notes to `CHANGELOG.md`:
 
 ```markdown
 # Changelog
@@ -16,21 +18,17 @@ By default, add release notes to `CHANGELOG.md` in Keep a Changelog format:
 
 Before each release, replace the empty section with real notes. rcr turns `[Unreleased]` into a dated version heading and starts a fresh `[Unreleased]` section afterward. Empty notes are rejected.
 
-If you use headings such as `## 0.1.1 (Next)` with a `- Your contribution here.` placeholder, set `changelog-format = "intridea"` in `rcr.toml`. To generate notes from commit messages instead, follow [Semantic Releases](semantic.md).
+Intridea headings such as `## 0.1.1 (Next)` with a `- Your contribution here.` placeholder are also detected automatically. Matching dated version headings allow detection during recovery after the unreleased section has been consumed. Detection uses real Markdown headings, not examples inside code blocks or quotes.
 
-If you do not keep a changelog, use:
+An existing empty, unknown, or mixed-format file stops the release before source edits. Set `changelog-format = "keep-a-changelog"` or `"intridea"` to select a format explicitly, or `"disabled"` to leave the file untouched. Explicit handwritten formats still require a valid changelog with meaningful notes. The `changelog` setting selects another path; automatic detection uses that path rather than scanning other files.
 
-```toml
-changelog-format = "disabled"
-```
-
-This leaves any existing changelog untouched and uses `Release X.Y.Z.` as the notes for a numeric release. It does not disable GitHub Releases or the next version bump.
+Semantic releases generate notes and update the changelog by default, including when `automatic` is explicitly selected. To generate notes from commit messages, follow [Semantic Releases](semantic.md). Set `changelog-format = "disabled"` to keep generated notes without file updates.
 
 The remaining sections describe the Rust API and detailed editing rules; they are not required for normal setup.
 
 ## Rust API
 
-The `Changelog` trait separates source transformations from file edits. `release` returns `ChangelogEdit { source, notes }`; `next` prepares development notes. Both validate before writing through `release_file` or `next_file`. Dates use `YYYY/MM/DD`; prereleases and build metadata are unsupported.
+The `Changelog` trait separates source transformations from file edits. `release` returns `ChangelogEdit { source, notes }`; `next` prepares development notes. Both validate before writing through `release_file` or `next_file`. `AutomaticChangelog` resolves a concrete provider from the file before workflow mutation, retaining that choice throughout preparation and next-development changes. Dates use `YYYY/MM/DD`; prereleases and build metadata are unsupported.
 
 ## Handwritten Changelogs
 
@@ -46,7 +44,7 @@ Matching existing release sections are reused without changing their dates; supp
 
 ## Disabled Changelogs
 
-Set `changelog-format = "disabled"` in `rcr.toml`, or assign `Arc::new(NoChangelog)` to `workflow.components.changelog` after selecting numeric or semantic mode. The engine does not resolve, read, create, or modify any changelog path, including during next-development preparation and recovery. Existing files are left untouched. Handwritten template settings are rejected with this configuration.
+Set `changelog-format = "disabled"` explicitly, or assign `Arc::new(NoChangelog)` to `workflow.components.changelog` after selecting numeric or semantic mode. Unlike automatic detection, explicit disabling never resolves or reads a changelog path. The engine does not create or modify any changelog file, including during next-development preparation and recovery. Existing files are left untouched. Handwritten template settings are rejected with this configuration.
 
 Numeric releases retain the note `Release X.Y.Z.` for receipts and hosted releases. Semantic releases retain the captured generated notes and still validate their source-bound decision; disabling the file does not disable semantic analysis or note verification. `NoChangelog` file helpers are also no-ops for filesystem access.
 

@@ -23,4 +23,5 @@
 - [#23](https://github.com/dblock/rust-crate-release/pull/23): Make standard releases configuration-free with inferred default branches and GitHub repositories, optional overrides, and an explicit hosted-release opt-out - [@dblock](https://github.com/dblock).
 - [#22](https://github.com/dblock/rust-crate-release/pull/22): Simplify release adoption with step-by-step README setup, Cargo first publication, trusted publishing, version examples, and practical configuration, changelog, and recovery guides, with advanced hooks documented separately - [@dblock](https://github.com/dblock).
 - [#25](https://github.com/dblock/rust-crate-release/pull/25): Remove the logo background and shadow and align its visible height with sibling release-tool logos - [@dblock](https://github.com/dblock).
+- [#24](https://github.com/dblock/rust-crate-release/pull/24): Automatically detect supported handwritten changelogs or skip missing files, reject unknown or ambiguous formats before source edits, and preserve explicit overrides and semantic generated notes - [@dblock](https://github.com/dblock).
 - Your contribution here.

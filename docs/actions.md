@@ -4,13 +4,15 @@ Start with [README Usage](../README.md#usage) for the shortest setup. This guide
 
 ## Prepare Your Project
 
-Your project needs a package version in `Cargo.toml`, a committed `Cargo.lock`, and release notes. Run `cargo generate-lockfile` if the lockfile is missing, including for a library.
+Your project needs a package version in `Cargo.toml` and a committed `Cargo.lock`. Run `cargo generate-lockfile` if the lockfile is missing, including for a library.
 
 No `rcr.toml` is required. rcr discovers your repository and default branch. It publishes the version in `Cargo.toml`, creates a GitHub Release, and prepares the next patch version. For example, releasing `0.1.1` leaves `0.1.2` in the manifest and lockfile.
 
 For a workspace member, set `manifest = "path/to/member/Cargo.toml"` in an optional `rcr.toml`. Each release handles one package with its own explicit version; workspace-inherited versions and coordinated multi-crate releases are not supported.
 
-Create `CHANGELOG.md` with meaningful unreleased notes:
+No changelog is required. Numeric releases automatically detect Keep a Changelog or Intridea format in `CHANGELOG.md`. If the file is absent, they skip file updates and use `Release X.Y.Z.` as release notes. No configuration is needed. Unknown or mixed formats stop before release edits; choose an explicit format or `changelog-format = "disabled"` in `rcr.toml` to override detection.
+
+If you keep a changelog, add meaningful unreleased notes, for example:
 
 ```markdown
 # Changelog
@@ -22,7 +24,7 @@ Create `CHANGELOG.md` with meaningful unreleased notes:
 - Add widget serialization.
 ```
 
-Add real notes before each release; an empty `[Unreleased]` section is rejected. See [Changelogs](changelogs.md) for other formats, generated notes, or disabling the file. Merge the lockfile, notes, workflow, and any configuration before releasing.
+When handwritten changelog updates are enabled, add real notes before each release; empty notes are rejected. See [Changelogs](changelogs.md) for other formats or generated notes. Merge the lockfile, workflow, and any optional configuration and notes before releasing.
 
 The workflow runs formatting checks, tests, and Clippy before publishing. Projects needing system libraries or other setup steps can use the [composite action](#custom-jobs-with-the-composite-action).
 
@@ -50,7 +52,7 @@ Use Cargo locally for the one-time bootstrap. Cargo uses credentials saved by `c
    ```
 
 5. Run `cargo logout` even after failure when credentials are no longer needed, and revoke the token under crates.io **API Tokens**. Confirm whether the version reached crates.io before retrying a failed upload.
-6. Prepare the next version: after publishing `0.1.0`, change `Cargo.toml` to `0.1.1`, run `cargo check` to refresh `Cargo.lock`, add unreleased notes, and commit. Cargo does not do these steps or create Git tags for you. You can optionally tag the original published commit as `v0.1.0`.
+6. Prepare the next version: after publishing `0.1.0`, change `Cargo.toml` to `0.1.1`, run `cargo check` to refresh `Cargo.lock`, add unreleased notes if changelog updates are enabled, and commit. Cargo does not do these steps or create Git tags for you. You can optionally tag the original published commit as `v0.1.0`.
 7. Configure trusted publishing below. Subsequent releases use the workflow, not a local token.
 
 ## Configure GitHub
@@ -125,7 +127,7 @@ Merge the caller workflow and any optional configuration onto the default branch
 
 ## Run and Verify a Release
 
-Add meaningful notes and commit any intended manifest-version change. Ensure the default branch is clean, up to date, and has no competing release. Then select **Actions > Release > Run workflow**, choose the default branch, and leave `version` empty unless deliberately overriding the manifest version.
+Commit any intended manifest-version change and add meaningful notes if handwritten changelog updates are enabled. Ensure the default branch is clean, up to date, and has no competing release. Then select **Actions > Release > Run workflow**, choose the default branch, and leave `version` empty unless deliberately overriding the manifest version.
 
 The equivalent GitHub CLI command is:
 
