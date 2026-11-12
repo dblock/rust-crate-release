@@ -1,0 +1,8 @@
+changelog-format = "intridea"
+github-repository = "dblock/rust-crate-release"
+validation = [
+    ["cargo", "test", "--locked", "--workspace"],
+    ["cargo", "xtask", "lint"],
+    ["cargo", "xtask", "package"],
+    ["npm", "--prefix", "actions", "test"],
+]

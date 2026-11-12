@@ -4,6 +4,8 @@
 
 This is an unpublished `0.1.0` library/CLI with typed numeric/semantic orchestration, reusable/composite Actions, and replaceable providers. [CLI and Configuration](docs/cli.md) documents real commands; [GitHub Actions](docs/actions.md) documents integration. The reusable workflow does not activate this repository's self-release: no credentials, trusted publisher, environment, protection exception, dispatch, or release tag is configured. These instructions do not authorize publication.
 
+The repository's data-only `rcr.toml` selects its actual Intridea changelog and runs workspace tests, full lint, real package/installed-consumer validation, and Node artifact-support tests in both source and next-development validation. GitHub hosting is selected but acquires credentials only during publication, not preparation. This maintenance configuration is not part of the distributed crate and does not activate a workflow or authorize release actions.
+
 ## Validate the Distribution
 
 Run the local checks before committing or pushing release-related changes:
