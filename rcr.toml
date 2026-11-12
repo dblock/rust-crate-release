@@ -1,4 +1,4 @@
-changelog-format = "intridea"
+changelog-format = "keep-a-changelog"
 runner = ["cargo", "run", "--locked", "--quiet", "-p", "xtask", "--bin", "rcr-release", "--"]
 github-repository = "dblock/rust-crate-release"
 validation = [

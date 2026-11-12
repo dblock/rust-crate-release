@@ -4,9 +4,9 @@ To release your own Cargo project with rust-crate-release, follow [GitHub Action
 
 ## Choose the Version
 
-Check the current manifest version against crates.io before changing it. Keep an unreleased version unchanged; once it is published, follow [Versioning](AGENTS.md#versioning) and synchronize `Cargo.toml`, `Cargo.lock`, and the Next changelog heading. Do not infer publication from examples in the documentation, a prepared archive, or a Git tag alone.
+Check the current manifest version against crates.io before changing it. Keep an unreleased version unchanged; once it is published, follow [Versioning](AGENTS.md#versioning) and synchronize `Cargo.toml` and `Cargo.lock`, keeping new notes under `[Unreleased]`. Do not infer publication from examples in the documentation, a prepared archive, or a Git tag alone.
 
-Keep meaningful, attributed changes under the current `## X.Y.Z (Next)` section of `CHANGELOG.md`, with the contribution placeholder last. rcr dates the release section during preparation and creates the next patch development section afterward. Never overwrite an existing registry version or move a published release tag.
+Keep meaningful, attributed changes under `## [Unreleased]` in `CHANGELOG.md`, grouped by change type. rcr turns that section into `## [X.Y.Z] - YYYY-MM-DD` during preparation, then creates a fresh `[Unreleased]` section and advances the manifest to the next patch version afterward. Comparison links are updated automatically. Never overwrite an existing registry version or move a published release tag.
 
 ## Validate the Distribution
 
@@ -20,7 +20,7 @@ cargo xtask package
 
 Package validation builds `target/package/rust-crate-release-<version>.crate`, checks its paths and allowlist, verifies Cargo compilation, and runs an extracted-library consumer and the installed executable's shared real-process fixtures. It does not publish. Inspect the archive's normalized manifest, lockfile, README, license, changelog, and shipped action/workflow before release.
 
-The root `rcr.toml` selects this repository's Intridea changelog, GitHub hosting, workspace tests, full lint, real package/consumer validation, and source-owned `rcr-release` runner. Those commands also run during next-development validation. The runner updates README and usage-document installation/action pins to the released version, not the next manifest version, in the validated next-development commit after publication. It leaves consuming-crate example versions unchanged and does not invent an unreleased tag. This maintenance configuration and runner are excluded from the distributed crate; consumers provide their own configuration.
+The root `rcr.toml` selects this repository's Keep a Changelog format, GitHub hosting, workspace tests, full lint, real package/consumer validation, and source-owned `rcr-release` runner. Those commands also run during next-development validation. The runner updates README and usage-document installation/action pins to the released version, not the next manifest version, in the validated next-development commit after publication. It leaves consuming-crate example versions unchanged and does not invent an unreleased tag. This maintenance configuration and runner are excluded from the distributed crate; consumers provide their own configuration.
 
 ## Publish Locally
 
