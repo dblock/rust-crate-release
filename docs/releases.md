@@ -1,6 +1,6 @@
 # Release Workflows
 
-The library composes numeric and semantic releases through the same typed engine. The CLI and Actions wrappers follow separately; the examples below are Rust APIs, not authorization to publish.
+The library, [CLI](cli.md), and [GitHub Actions integration](actions.md) use the same typed numeric/semantic release engine. Follow the [trusted-publishing setup](actions.md) for a standard Cargo project; use the Rust API below when you need custom providers, typed hooks, or workflow composition.
 
 ## Configure Providers
 
@@ -51,6 +51,21 @@ Real publication requires separately authorized credentials and remote-write per
 
 `ReleaseHooks` has a typed ordered registry for every step. Before/after hooks receive borrowed input/output and immutable execution snapshots. Both before and after preparation/next hooks may make deliberate source edits: their `Edited`/`NextEdited` output precedes trusted staging, real validation, and commitment. Other phases must not edit source. Validators must not change tracked, staged, or untracked release files; unexpected edits are preserved and rejected before commitment. A disabled host or next-development operation records `Skipped`, including through a hook wrapper.
 
+### Edit a File in a Hook
+
+The [README's runnable example](../README.md#custom-hooks) keeps a `VERSION` file synchronized with the manifest, registers both hook instances, and explains real publication versus preparation only. Add the library as a development dependency and run your own example from the project root; built-in CLI/Actions configuration does not discover Rust hooks.
+
+| Hook | Runs | Source Edit Result |
+| --- | --- | --- |
+| `prepare.before` | Before release manifest/changelog edits. | Included in source validation and the release commit/archive. |
+| `prepare.after` | After release manifest/changelog edits, before staging. | Included in source validation and the release commit/archive. |
+| `next.before` | After publication/push/optional hosting, before development edits. | Included in development validation and the next-development commit. |
+| `next.after` | After development manifest/changelog edits, before staging. | Included in development validation and the next-development commit. |
+
+Implement `LifecycleHook<Analyzed, Edited>` for preparation, or `LifecycleHook<Hosted, NextEdited>` for next development, and assign `workflow.hooks.prepare = workflow.hooks.prepare.with(hook)` or the corresponding `next` registry. The type parameters refer to the inner edit operation, not the later staging/commit steps. Read the updated manifest in an after hook when generating version-dependent files, rather than assuming that the released version is still the checkout's current development version.
+
+Next hooks also run when next-development preparation is disabled; check `NextEdited::next_version()` before performing an operation that requires a next version. Hook failures propagate, and recovery may invoke hooks again, so keep edits repeatable and do not move HEAD, stage, or commit inside a hook. Source edits in publication/verification/other phases are not supported.
+
 ## Capture Inputs Once
 
 A fresh request captures current package metadata, source commit, initial remote head, source timestamp, and release date. Dirty checkouts, wrong branches, source/remote divergence, conflicting tags, invalid versions, and nonreleasable semantic decisions fail closed. Dates use the configured IANA timezone; archives receive the captured source timestamp. Numeric overrides may increase the source manifest version but never decrease it.
@@ -65,7 +80,7 @@ Semantic preparation retains the original source-bound decision; publication doe
 
 `ReleaseRequest::archive` selects a nonempty explicit archive. Absent and empty paths both select normal packaging or matching retained output. Invalid overrides fail instead of rebuilding silently. Retained/overridden archives must match captured name/version and the prepared clean VCS commit, and the actual extracted-archive consumer runs on every preparation. Matching output is reused without repacking; conflicting bytes fail.
 
-Build retains `<name>-<version>.crate`, `<name>-<version>.bundle`, `release.json`, and credential-free `execution.json`. `ArtifactPreserver::preserve` must succeed before the registry publisher is called. `LocalArtifacts` refuses GitHub execution: Actions callers must inject a real durable uploader, not a completion flag. The engine cannot prove arbitrary custom providers honest.
+Build retains `<name>-<version>.crate`, `<name>-<version>.bundle`, `release.json`, and credential-free `execution.json`. `ArtifactPreserver::preserve` must succeed before the registry publisher is called. `LocalArtifacts` refuses GitHub execution: Actions callers must supply independently verified durable preservation, not a completion flag. The standard composite uploads recovery files between preparation and release, then uses `actions::GitHubArtifacts` to compare the stored snapshot before publication. The engine cannot prove arbitrary custom providers honest.
 
 ## Reconcile Partial Releases
 

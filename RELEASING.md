@@ -1,14 +1,16 @@
 # Releasing
 
-## Current Status
+To release your own Cargo project with rust-crate-release, follow [GitHub Actions and Trusted Publishing](docs/actions.md). This document covers maintenance releases of rust-crate-release itself. Release instructions are not permission to publish, dispatch workflows, create tags, configure credentials, or change protections.
 
-This is an unpublished `0.1.0` library/CLI with typed numeric/semantic orchestration, reusable/composite Actions, and replaceable providers. [CLI and Configuration](docs/cli.md) documents real commands; [GitHub Actions](docs/actions.md) documents integration. The reusable workflow does not activate this repository's self-release: no credentials, trusted publisher, environment, protection exception, dispatch, or release tag is configured. These instructions do not authorize publication.
+## Choose the Version
 
-The repository's data-only `rcr.toml` selects its actual Intridea changelog and runs workspace tests, full lint, and real package/installed-consumer validation in both source and next-development validation. Rust Actions tests are included in those checks; no Node/npm installation is needed. GitHub hosting is selected but acquires credentials only during publication, not preparation. This maintenance configuration is not part of the distributed crate and does not activate a workflow or authorize release actions.
+Check the current manifest version against crates.io before changing it. Keep an unreleased version unchanged; once it is published, follow [Versioning](AGENTS.md#versioning) and synchronize `Cargo.toml`, `Cargo.lock`, and the Next changelog heading. Do not infer publication from examples in the documentation, a prepared archive, or a Git tag alone.
+
+Keep meaningful, attributed changes under the current `## X.Y.Z (Next)` section of `CHANGELOG.md`, with the contribution placeholder last. rcr dates the release section during preparation and creates the next patch development section afterward. Never overwrite an existing registry version or move a published release tag.
 
 ## Validate the Distribution
 
-Run the local checks before committing or pushing release-related changes:
+Run local checks on the exact revision before committing or pushing release-related changes:
 
 ```sh
 cargo test --locked --workspace
@@ -16,30 +18,48 @@ cargo xtask lint
 cargo xtask package
 ```
 
-The final command builds `target/package/rust-crate-release-0.1.0.crate`, verifies Cargo can compile it, checks archive paths, extracts that actual archive, and runs an isolated dependent program. It never publishes. Inspect the packaged manifest, lockfile, README, license, and changelog before any separately authorized release.
+Package validation builds `target/package/rust-crate-release-<version>.crate`, checks its paths and allowlist, verifies Cargo compilation, and runs an extracted-library consumer and the installed executable's shared real-process fixtures. It does not publish. Inspect the archive's normalized manifest, lockfile, README, license, changelog, and shipped action/workflow before release.
 
-Check registry release status before changing versions. Keep unreleased `0.1.0` unchanged, and synchronize root Cargo version, committed lockfile, and Next changelog heading. Once released, follow [Versioning](AGENTS.md#versioning); release sections use `## <version> (YYYY/MM/DD)`, with newest versions first.
+The root `rcr.toml` selects this repository's Intridea changelog, GitHub hosting, workspace tests, full lint, and real package/consumer validation. Those commands also run during next-development validation. This maintenance configuration is excluded from the distributed crate; consumers provide their own configuration.
 
-## First Publication and Authentication
+## Publish Locally
 
-The maintainer must separately authorize the first publication and complete authentication locally; never place tokens, challenge links, or codes in chat, commits, diagnostics, or repository secrets. [crates.io Trusted Publishing](https://crates.io/docs/trusted-publishing) currently requires the crate to have been published already; initial publication needs an API token. Recheck that requirement and current official tooling when implementing the release flow.
+Use a clean, full-history default-branch checkout matching the remote. Configure the Git author and remote-push authentication, and build the reviewed tool:
 
-Cargo does not accept a prebuilt `.crate` in `cargo publish`. The implemented publisher uploads validated bytes through Cargo's documented [registry upload protocol](https://doc.rust-lang.org/cargo/reference/registry-web-api.html#publish), proven by simulated-registry tests. After separate authorization, prepare with `rcr prepare --save-inputs .git/rcr/source-inputs.json`, inspect the retained archive/notes/refs, provide an API token privately through `CARGO_REGISTRY_TOKEN`, then run `rcr release --inputs .git/rcr/source-inputs.json` in the same clean checkout. That command publishes, pushes release refs, optionally hosts/advances development, and verifies; it is not a dry run. Repository protections must separately permit the authorized release pushes. Never expose the token in shell history or diagnostic output, and remove it from the environment afterward.
+```sh
+cargo build --locked --bin rcr
+./target/debug/rcr prepare --save-inputs .git/rcr/source-inputs.json
+```
 
-After a confirmed first release, separately authorize/configure a trusted publisher for the exact owner/repository, caller workflow filename, and environment. Use the official [crates.io authentication action](https://github.com/rust-lang/crates-io-auth-action) or a verified provider implementation to obtain short-lived OIDC credentials. Read back saved settings; configuration alone does not prove a successful authenticated publication. This scaffold neither configures a publisher nor requests a token.
+Preparation validates, commits, packages, creates the local release tag, and retains recovery files without publishing or pushing. Inspect the prepared archive, notes, commit/tag, and diagnostic identity before proceeding. Cargo cannot publish a supplied `.crate`; rcr uses the documented [registry upload protocol](https://doc.rust-lang.org/cargo/reference/registry-web-api.html#publish) to publish those exact checked bytes rather than repackaging.
 
-## Automated Release Integration
+Supply an authorized, narrowly scoped crates.io API token privately as `CARGO_REGISTRY_TOKEN`; this is required for a crate's first publication. Provide GitHub authentication separately through `gh auth login` or a private `GH_TOKEN`/`GITHUB_TOKEN`. Do not put credentials in chat, shell history, Git, diagnostics, or repository secrets.
 
-Use the reviewed [reusable/composite integration](docs/actions.md) with manual dispatch, the default branch, a restricted `release` environment, explicit `actions: read`/`contents: write`/`id-token: write`, non-canceling concurrency, and durable artifact upload plus independent remote-byte verification before registry mutation. Pin reusable workflow and tooling refs together. Do not copy a tag-triggered quick-start: release commit/tag creation belongs after archive publication. SDK release refs in the documentation become usable only after their separately authorized tags exist.
+After confirming that branch/tag protections permit the release and next-development pushes, publish:
 
-Any direct-push release metadata/next-version exception needs explicit setup authorization and verified protection changes. Retain active force-push/deletion protections with no bypass actors; document that removing a PR requirement would permit direct pushes by all writers, not just the release workflow. Ordinary development remains PR-based. No such exception is configured now.
+```sh
+./target/debug/rcr release --inputs .git/rcr/source-inputs.json
+unset CARGO_REGISTRY_TOKEN
+```
 
-After acceptance, push the matching commit/tag atomically, read back remote refs, publish the GitHub Release/archive, validate and push optional next-development edits, then verify registry SHA-256 against the retained archive using the explicit released version. Once the first registry release is verified, add a resolving crates.io version badge to README's existing badge block, linking to the actual published crate.
+Remove the token even after a failure, and reconcile actual outputs before retrying. Publication, Git pushes, hosting, next-development preparation, and verification are separate operations; a failed later step does not undo an accepted crate upload.
 
-## Verify and Recover
+## Configure Trusted Publishing
 
-Registry acceptance and index visibility are separate. Retry only structured version absence with bounded waits; visibility timeout records an unverified result, not a reason to republish. Authentication, transport, malformed metadata, identity, and integrity failures remain errors. Never infer publication failure solely from a timeout.
+After the crate exists on crates.io, follow the [consumer setup guide](docs/actions.md) for the `release` environment, compatible branch/tag rules, a per-crate trusted publisher, and a manually dispatched caller workflow. For this repository, publisher identity uses owner `dblock`, repository `rust-crate-release`, the actual caller workflow filename, and environment `release`. The reusable `.github/workflows/release.yml` is a `workflow_call` implementation, not a dispatchable self-release caller.
 
-Recovery must inspect registry metadata/downloads, remote refs, hosted releases/assets, and retained archives/bundles before completing missing work. Matching outputs are reusable; conflicting bytes or tags fail closed. Diagnostic phase records do not authorize skipping checks, downloading/restoring execution state, moving tags, rewriting published versions, discarding source changes, or automatically retrying ambiguous uploads.
+The caller needs `actions: read`, `contents: write`, and `id-token: write`. rcr performs the OIDC exchange and short-lived token cleanup itself; do not add a separate authentication action or set `CARGO_REGISTRY_TOKEN` in the automated job. Pin the caller's reusable-workflow and `tool-ref` references together.
 
-Use `rcr verify --name rust-crate-release --release-version 0.1.0 --archive .git/rcr/rust-crate-release-0.1.0.crate` for read-only historical verification after the manifest advances. It compares explicit identity, checksum, and bytes without publication, Git mutation, or receipt writes. Shared source/installed executable fixtures exercise this contract and optional archive/next-development behavior. Retain private diagnostics without credentials and summarize unverified outcomes visibly.
+Review protection changes separately. Release automation needs direct pushes of release metadata and the next development version, not PRs for those commits. Removing a PR requirement permits direct pushes by all writers, not just automation; ordinary development remains PR-based. Retain active force-push and deletion protections with no bypass actors.
+
+Configuration alone does not prove a trusted release works. Read back the saved publisher/environment/permissions and confirm them through a separately authorized real release. Documentation changes do not activate self-release or configure these external settings.
+
+## Confirm and Recover
+
+Check crates.io for the explicit released version and checksum, confirm the matching remote `vX.Y.Z` tag/commit and hosted archive, then inspect the next development manifest, lockfile, changelog, and remote branch. Verification always uses the released version and retained archive, never the now-advanced manifest or HEAD.
+
+Registry visibility can lag acceptance. Bound retries only for structured version absence; a visibility timeout records an unverified outcome without blocking hosting/development or authorizing another upload. Authentication, transport, metadata, identity, and checksum errors remain failures. Use `rcr verify --name rust-crate-release --release-version X.Y.Z --archive PATH_TO_RELEASED_CRATE`, replacing the version and path with the retained release.
+
+Follow [Diagnostics and Recovery](docs/recovery.md) before completing missing operations. Never restore a diagnostic completion flag as authority, discard unexpected source edits, move a tag, or assume a failed response means publication did not happen.
+
+After confirming a registry release, verify that the version's installation command and matching `vX.Y.Z` workflow refs resolve, and add or verify the crates.io version badge in README. Release date, version metadata, and registry badges must reflect actual publication, not release-ready documentation.

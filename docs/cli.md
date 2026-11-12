@@ -2,7 +2,7 @@
 
 ## Commands
 
-Install the unpublished executable from a reviewed checkout with `cargo install --locked --path .`. `rcr --version` prints the tool version; `--release-version` selects a release. Every successful operation prints exactly one JSON object to stdout; progress, validators, summaries, and errors use stderr. Exit codes are 0 for success or bounded visibility timeout, 1 for operational failure, and 2 for invalid command syntax.
+Install `cargo install --locked rust-crate-release --version 0.1.0` with Rust 1.99.1 or later. To build a reviewed checkout instead, use `cargo install --locked --path .`. `rcr --version` prints the tool version; `--release-version` selects your crate's release version, not the tool version. Every successful operation prints exactly one JSON object to stdout; progress, validators, summaries, and errors use stderr. Exit codes are 0 for success or bounded visibility timeout, 1 for operational failure, and 2 for invalid command syntax.
 
 ```sh
 rcr prepare --save-inputs .git/rcr/source-inputs.json
@@ -10,7 +10,7 @@ rcr release --inputs .git/rcr/source-inputs.json
 rcr verify --name example-crate --release-version 0.1.0 --archive .git/rcr/example-crate-0.1.0.crate
 ```
 
-These are real release operations, not dry runs. Preparation edits and validates source, commits, packages, creates a local tag, and retains a bundle; it does not publish, push, create a hosted release, or advance development. Release repeats preparation against actual outputs, preserves the artifact, publishes exact bytes, atomically pushes, optionally hosts and advances development, then verifies. See [Release Workflows](releases.md) for phase order and [Releasing](../RELEASING.md) for authorization and authentication.
+These are real release operations, not dry runs. Preparation edits and validates source, commits, packages, creates a local tag, and retains a bundle; it does not publish, push, create a hosted release, or advance development. Release repeats preparation against actual outputs, preserves the artifact, publishes exact bytes, atomically pushes, optionally hosts and advances development, then verifies. For token-free automated releases, follow [GitHub Actions and Trusted Publishing](actions.md). See [Release Workflows](releases.md) for typed composition.
 
 For example, standalone verification returns:
 
@@ -23,6 +23,31 @@ Object key order is not a public contract. Workflow phases and configured valida
 `prepare` and `release` accept `--release-version`, optional `--archive`, `--inputs`, and `--save-inputs`. An explicit nonempty archive wins over nonempty `CRATE_ARCHIVE`; empty optional values behave as unset. A supplied invalid archive fails instead of silently rebuilding. Without an override, a matching retained archive is reused before building. Next-development validation always removes inherited `CRATE_ARCHIVE`.
 
 `verify` requires `--name`, `--release-version`, and `--archive`. It reads configuration and the retained archive, queries/downloads that explicit published version, and compares identity, checksum, and bytes. It does not construct a Git repository, discover the current manifest version, write receipts, authenticate for publication, or mutate release outputs. Release-only flags are rejected by the parser.
+
+## Local Publication
+
+Run from the root of a clean Git checkout on the configured default branch, with full history and HEAD matching its remote. Commit a reviewed `Cargo.lock`, meaningful changelog notes, and the intended stable manifest version first. Configure your Git author and push authentication. `rcr.toml` defaults to branch `master` and remote `origin`; set `default-branch` for projects using another branch.
+
+Prepare and inspect the captured release before supplying credentials:
+
+```sh
+rcr prepare --save-inputs .git/rcr/source-inputs.json
+```
+
+Default validation runs formatting, locked tests, and Clippy; packaging also compiles actual-archive consumers. Dependencies must be cached before offline packaging. Inspect the retained `.crate`, Git bundle, changelog, local release commit/tag, and `.git/rcr/release.json`. For linked worktrees, use `git rev-parse --git-path rcr` to locate the metadata directory instead of assuming `.git` is a directory.
+
+Create a narrowly scoped crates.io API token and supply it privately as `CARGO_REGISTRY_TOKEN` in your local shell. rcr does not read tokens saved by `cargo login`; do not put a literal token in commands, shell history, documentation, or Git. If `github-repository` is set, also provide GitHub authentication through `gh auth login` or private `GH_TOKEN`/`GITHUB_TOKEN`. Registry authentication and Git/GitHub authentication are separate.
+
+Once ready to publish, run:
+
+```sh
+rcr release --inputs .git/rcr/source-inputs.json
+unset CARGO_REGISTRY_TOKEN
+```
+
+This publishes the exact retained archive, pushes its release commit/tag atomically, hosts the release if configured, validates/pushes the next development version, and verifies the released version. Branch and tag protections must permit those ordinary pushes. Remove the token from your environment even if the command fails; inspect [partial-success recovery](recovery.md) before retrying.
+
+For a new crate this local publication establishes the version required by crates.io before configuring trusted publishing. For an existing crate, use the [Actions setup](actions.md) to avoid local registry tokens on subsequent releases. Local artifacts alone are not sufficient for GitHub execution: the composite action requires independently verified durable preservation before publication.
 
 ## Captured Source Inputs
 
