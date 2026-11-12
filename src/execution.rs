@@ -11,6 +11,7 @@ pub enum StepOutcome {
     Success,
     Failure,
     Skipped,
+    Cancelled,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -27,6 +28,13 @@ pub struct RunMetadata {
     pub run_url: Option<String>,
     pub repository: Option<String>,
     pub attempt: Option<String>,
+    pub reference: Option<String>,
+    pub sha: Option<String>,
+    pub job: Option<String>,
+    pub workflow_name: Option<String>,
+    pub event: Option<String>,
+    #[serde(default)]
+    pub external_steps: Vec<StepRecord>,
 }
 
 /// A point-in-time value, not a live platform client or an environment dump.
@@ -94,12 +102,90 @@ impl GitHubExecutionProvider {
                 run_id,
                 run_url,
                 attempt: value("GITHUB_RUN_ATTEMPT"),
+                reference: value("GITHUB_REF"),
+                sha: value("GITHUB_SHA"),
+                job: value("GITHUB_JOB"),
+                workflow_name: value("GITHUB_WORKFLOW"),
+                event: value("GITHUB_EVENT_NAME"),
+                external_steps: external_steps(value("RCR_STEPS").as_deref()).unwrap_or_default(),
             },
             event: value("GITHUB_EVENT_NAME"),
             reference: value("GITHUB_REF"),
             default_branch,
             summary: value("GITHUB_STEP_SUMMARY").map(PathBuf::from),
         }
+    }
+}
+
+/// Projects the actual Actions snapshot onto outcomes only; outputs are discarded.
+pub fn external_steps(source: Option<&str>) -> Result<Vec<StepRecord>> {
+    #[derive(Deserialize)]
+    struct Observed {
+        outcome: StepOutcome,
+        conclusion: StepOutcome,
+    }
+    let Some(source) = source.filter(|source| !source.is_empty()) else {
+        return Ok(Vec::new());
+    };
+    if source.len() > 1024 * 1024 {
+        return Err(Error::invalid("Actions step snapshot is too large"));
+    }
+    let steps: BTreeMap<String, Observed> = serde_json::from_str(source)
+        .map_err(|_| Error::invalid("invalid Actions step outcomes"))?;
+    Ok(steps
+        .into_iter()
+        .map(|(id, step)| StepRecord {
+            id,
+            outcome: step.outcome,
+            conclusion: step.conclusion,
+        })
+        .collect())
+}
+
+/// Trusted direct-argv callbacks receive only the credential-free execution snapshot.
+pub struct CommandCallbacks {
+    pub root: PathBuf,
+    pub success: Option<Vec<String>>,
+    pub failure: Option<Vec<String>>,
+}
+
+impl CommandCallbacks {
+    pub fn notify(&self, success: bool, execution: &ExecutionContext) -> Result {
+        let command = if success {
+            &self.success
+        } else {
+            &self.failure
+        };
+        let Some(command) = command else {
+            return Ok(());
+        };
+        let (program, args) = command
+            .split_first()
+            .filter(|(program, _)| !program.is_empty())
+            .ok_or_else(|| Error::invalid("callback requires nonempty program argv"))?;
+        let context = serde_json::to_string(execution)?;
+        let args: Vec<_> = args.iter().map(String::as_str).collect();
+        let output = crate::command::run_with_env(
+            &self.root,
+            program,
+            &args,
+            &[
+                ("RCR_STATUS", if success { "success" } else { "failure" }),
+                ("RCR_EXECUTION_CONTEXT", &context),
+            ],
+        )?;
+        std::io::stderr().write_all(&output.stdout)?;
+        std::io::stderr().write_all(&output.stderr)?;
+        Ok(())
+    }
+}
+
+impl crate::WorkflowObserver for CommandCallbacks {
+    fn success(&self, execution: &ExecutionContext) -> Result {
+        self.notify(true, execution)
+    }
+    fn failure(&self, execution: &ExecutionContext, _: &Error) -> Result {
+        self.notify(false, execution)
     }
 }
 
@@ -155,6 +241,29 @@ mod tests {
         .into_iter()
         .map(|(k, v)| (k.into(), v.into()))
         .collect()
+    }
+
+    #[test]
+    fn external_outcomes_discard_outputs_and_preserve_continued_failures_and_cancellation() -> Result
+    {
+        let steps = external_steps(Some(
+            r#"{
+            "test":{"outcome":"failure","conclusion":"success","outputs":{"token":"must-not-appear"}},
+            "cancelled":{"outcome":"cancelled","conclusion":"cancelled"},
+            "skipped":{"outcome":"skipped","conclusion":"skipped"}
+        }"#,
+        ))?;
+        assert_eq!(steps[2].outcome, StepOutcome::Failure);
+        assert_eq!(steps[2].conclusion, StepOutcome::Success);
+        assert_eq!(steps[0].outcome, StepOutcome::Cancelled);
+        assert!(!serde_json::to_string(&steps)?.contains("must-not-appear"));
+        assert!(
+            external_steps(Some(
+                r#"{"test":{"outcome":"unknown","conclusion":"success"}}"#
+            ))
+            .is_err()
+        );
+        Ok(())
     }
 
     #[test]

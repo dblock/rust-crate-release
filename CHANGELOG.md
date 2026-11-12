@@ -16,4 +16,5 @@
 - [#15](https://github.com/dblock/rust-crate-release/pull/15): Add a changelog-disabled mode with retained numeric or semantic release notes and no changelog file access - [@dblock](https://github.com/dblock).
 - [#16](https://github.com/dblock/rust-crate-release/pull/16): Add typed hooks around authentication, local tagging, and separate development commit/push boundaries - [@dblock](https://github.com/dblock).
 - [#17](https://github.com/dblock/rust-crate-release/pull/17): Load trusted project Rust runners through CLI configuration and stock Actions while preserving typed hooks and artifact verification - [@dblock](https://github.com/dblock).
+- [#18](https://github.com/dblock/rust-crate-release/pull/18): Add terminal success/failure callbacks and credential-free actual Actions step/run context, including external setup failures - [@dblock](https://github.com/dblock).
 - Your contribution here.

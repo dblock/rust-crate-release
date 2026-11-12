@@ -182,6 +182,16 @@ Before registry mutation, Rust reads the immutable artifact through GitHub's pub
 
 Names are immutable within a run/attempt; conflicts fail rather than overwrite recovery evidence. A new attempt captures fresh bound inputs instead of restoring an older attempt's state. Deliberate same-attempt retries reverify the snapshot and reconcile actual outputs. Downloaded diagnostics are never interpreted as skip instructions. Repository tokens never follow signed download redirects, and raw tokens, signed URLs, and service bodies are not echoed.
 
+## Terminal Callbacks
+
+The composite and reusable workflows accept `success-command` and `failure-command` as JSON argv, for example `["cargo","run","--locked","--example","notify","--"]`. Alternatively configure `success = ["program", "argument"]` and `failure = ["program", "argument"]` in `rcr.toml`. Commands execute directly in the project root without implicit shell evaluation. The terminal `always()` step covers preparation, external preservation, publication, and diagnostic-upload failures without reporting success twice. Ordinary local `rcr release` uses the same configured callbacks; preparation alone does not run them.
+
+Callbacks receive `RCR_STATUS` and `RCR_EXECUTION_CONTEXT`, a JSON execution snapshot. It contains allowlisted run/ref/SHA/job/workflow/event fields and actual external step `outcome`/`conclusion` values, including continued failures, skipped steps, and cancellation. Step outputs and arbitrary environment variables are never included. External step IDs are a map projection, not a chronological history; the engine's own ordered `history` remains separate. These observations cannot authorize skipping release verification.
+
+If Rust setup or tool installation fails, an explicit `failure-command` input still runs through the hosted Ubuntu runner's Bash/jq argv adapter, with the same filtered context. Configuration-only callbacks require the installed tool; checkout failure or cancellation can also prevent a project program from being available. Keep notification commands independent of the failing setup where necessary. A failing failure callback cannot change an already-failed release into success or replace its original engine error. A success callback failure makes the operation fail.
+
+Library `WorkflowObserver::success` runs once after a whole composed workflow succeeds; `failure` remains best-effort and preserves the original error. This is separate from per-step `after`.
+
 ## Troubleshooting
 
 | Symptom | Check |
