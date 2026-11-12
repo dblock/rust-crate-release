@@ -2089,6 +2089,7 @@ dependencies = [
  "regex",
  "rust-crate-release",
  "serde_json",
+ "sha2",
  "tar",
  "tempfile",
  "yaml-rust2",

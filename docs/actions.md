@@ -210,7 +210,7 @@ jobs:
 
 Insert your additional setup before the final step. The action accepts `root` (default `.`), `config`, and `version`; outputs are `name`, `version`, `archive`, `checksum`, and JSON `verification`. Keep the selected Cargo package inside its Git root and do not leave untracked tooling inside the checkout.
 
-The action installs the selected Rust toolchain with rustfmt and Clippy and builds rcr. Your project must support the selected toolchain. Packaging checks run offline, so custom validators must first cache dependencies and install required tools; normal Cargo test/Clippy runs populate the dependency cache.
+The action installs the selected Rust toolchain with rustfmt and Clippy, restores Cargo dependency caches for the tool and project, and builds rcr from the reviewed source. Cached builds never replace release artifacts or publication verification. Your project must support the selected toolchain. Packaging checks run offline, so custom validators must first fetch dependencies and install required tools; normal Cargo test/Clippy runs populate the dependency cache.
 
 ## Preservation and Failure Boundaries
 

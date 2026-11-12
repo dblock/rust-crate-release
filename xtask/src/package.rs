@@ -33,6 +33,15 @@ fn expected_file(path: &str) -> bool {
         )
 }
 
+fn run_archive_cargo(root: &Path, target: &Path, args: &[&str]) -> Result {
+    let mut args = args.to_vec();
+    args.extend([
+        "--target-dir",
+        target.to_str().ok_or("non-UTF-8 target path")?,
+    ]);
+    run(root, "cargo", &args)
+}
+
 pub fn check(root: &Path) -> Result {
     let metadata = Command::new("cargo")
         .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
@@ -125,11 +134,17 @@ pub fn check(root: &Path) -> Result {
          fn main() -> Result { assert_eq!(Workflow::start().then(Length)?.run(\"crate\".into())?, 5); Ok(()) }\n",
     )?;
     run(&consumer, "cargo", &["generate-lockfile", "--offline"])?;
-    run(&consumer, "cargo", &["run", "--locked", "--offline"])?;
+    // Keep source/install isolation while reusing compiled dependencies across validations.
+    let consumer_target = Path::new(target).join("archive-consumer");
+    run_archive_cargo(
+        &consumer,
+        &consumer_target,
+        &["run", "--locked", "--offline"],
+    )?;
     let install = temporary.path().join("installed");
-    run(
+    run_archive_cargo(
         temporary.path(),
-        "cargo",
+        &consumer_target,
         &[
             "install",
             "--locked",
@@ -162,4 +177,37 @@ pub fn check(root: &Path) -> Result {
         files.len()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_target_rebuilds_each_extracted_source() -> Result {
+        let temporary = tempfile::tempdir()?;
+        let target = temporary.path().join("shared-target");
+        for (name, value) in [("first", "old"), ("second", "new")] {
+            let root = temporary.path().join(name);
+            fs::create_dir_all(root.join("src"))?;
+            fs::write(
+                root.join("Cargo.toml"),
+                "[package]\nname = \"archive-probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+            )?;
+            fs::write(
+                root.join("src/main.rs"),
+                format!("fn main() {{ println!(\"{value}\"); }}"),
+            )?;
+            run_archive_cargo(&root, &target, &["build", "--offline"])?;
+            let output = Command::new(
+                target
+                    .join("debug")
+                    .join(format!("archive-probe{}", std::env::consts::EXE_SUFFIX)),
+            )
+            .output()?;
+            assert!(output.status.success());
+            assert_eq!(String::from_utf8(output.stdout)?.trim(), value);
+        }
+        Ok(())
+    }
 }

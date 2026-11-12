@@ -192,6 +192,32 @@ mod tests {
     }
 
     #[test]
+    fn release_caches_both_cargo_workspaces_before_installation() {
+        let action = YamlLoader::load_from_str(include_str!("../../action.yml")).unwrap();
+        let steps = action[0]["runs"]["steps"].as_vec().unwrap();
+        let index = |name| {
+            steps
+                .iter()
+                .position(|step| step["name"].as_str() == Some(name))
+                .unwrap()
+        };
+        assert!(index("Set Up Rust") < index("Cache Rust Dependencies"));
+        assert!(index("Cache Rust Dependencies") < index("Install Release Tool"));
+        let cache = composite_step("Cache Rust Dependencies");
+        assert_eq!(
+            cache["with"]["workspaces"]
+                .as_str()
+                .unwrap()
+                .lines()
+                .collect::<Vec<_>>(),
+            [
+                "${{ github.action_path }} -> target",
+                "${{ inputs.root }} -> target",
+            ]
+        );
+    }
+
+    #[test]
     fn setup_command_is_optional_forwarded_and_runs_before_preparation() {
         let action = YamlLoader::load_from_str(include_str!("../../action.yml")).unwrap();
         let action = &action[0];
