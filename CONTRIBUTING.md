@@ -43,6 +43,8 @@ Use separate Test, Lint, and Package workflows and retain Coveralls coverage. Ma
 
 ## Pull Requests
 
+For artwork changes, preserve the editable SVG and PNG, licensing, README-first placement, and packaged assets. Follow [Artwork](DESIGN.md#artwork) and inspect full-size and README-scale renders.
+
 Inspect status, branches, and worktrees first. Work on `<username>/<topic>` branches from `master`, for example `dblock/implementation`; use a separate worktree only for parallel tasks, never to avoid preserving unrelated changes. Prefer one coherent commit per PR; squash task-owned iterations before pushing. Allow squash or rebase merges in repository settings, but use squash when merging for @dblock; merge commits are disabled. No direct development commits/pushes or force-pushes to `master`.
 
 Task-owned topic commits may be amended without asking again. Before rewriting, verify ownership, record the remote tip, reconcile remote changes, and run final local tests/lint. Push only with `--force-with-lease=<branch>:<recorded-sha>`; never rewrite someone else's work or force-push `master`. Include `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>` in AI-assisted commits, and disclose AI authorship on behalf of @dblock in AI-authored PRs/comments.

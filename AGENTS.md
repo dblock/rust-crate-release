@@ -22,6 +22,8 @@ Keep separate Test, Lint, and Package workflows and applicable Coveralls submiss
 
 Update documentation and linked changelog entries for meaningful features/improvements/fixes, with actual PR numbers and contributor attribution; omit minor typos and the initial scaffold. Predict the number before opening a PR and verify afterward. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for entry ordering. Keep DESIGN focused on current architecture; remove obsolete proposals. Breaking changes to released behavior need `UPGRADING.md` with source/target versions, short before/after examples, required steps, and the introducing PR, linked from README.
 
+Maintain the original editable SVG and matching PNG under `assets/`, their MIT licensing, README-first 160-pixel placement, and packaged-file requirements. Follow [Artwork](DESIGN.md#artwork) for regeneration and full/README-scale rendering checks.
+
 ## Versioning
 
 Before any bump, verify whether the current version is published in crates.io; ask when status cannot be established. Keep an unreleased version unchanged, including the initial `0.1.0`. If already released, bump in the same PR as the change and synchronize Cargo metadata, lockfile, and Next changelog heading. Features in `0.x` increment minor/reset patch; features in `1.x` and later increment minor/preserve patch. Breaking changes in `0.x` increment minor/reset patch without asking for a major; in `1.x` and later ask before choosing a major bump. Fixes use a patch bump. Document migration even for breaking `0.x` changes.
