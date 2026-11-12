@@ -8,21 +8,22 @@ use std::process::Command;
 use tar::Archive;
 
 fn expected_file(path: &str) -> bool {
-    matches!(
-        path,
-        ".cargo_vcs_info.json"
-            | "Cargo.toml"
-            | "Cargo.toml.orig"
-            | "Cargo.lock"
-            | "src/lib.rs"
-            | "README.md"
-            | "LICENSE"
-            | "CHANGELOG.md"
-            | "DESIGN.md"
-            | "CONTRIBUTING.md"
-            | "AGENTS.md"
-            | "RELEASING.md"
-    )
+    (path.starts_with("src/") && path.ends_with(".rs"))
+        || (path.starts_with("docs/") && path.ends_with(".md"))
+        || matches!(
+            path,
+            ".cargo_vcs_info.json"
+                | "Cargo.toml"
+                | "Cargo.toml.orig"
+                | "Cargo.lock"
+                | "README.md"
+                | "LICENSE"
+                | "CHANGELOG.md"
+                | "DESIGN.md"
+                | "CONTRIBUTING.md"
+                | "AGENTS.md"
+                | "RELEASING.md"
+        )
 }
 
 pub fn check(root: &Path) -> Result {
@@ -108,7 +109,11 @@ pub fn check(root: &Path) -> Result {
     )?;
     fs::write(
         consumer.join("src/main.rs"),
-        "use rust_crate_release as _;\nfn main() {}\n",
+        "use rust_crate_release::{execution::ExecutionContext, Result, Step, Workflow};\n\
+         struct Length;\nimpl Step<String> for Length {\n\
+         type Output = usize;\nfn id(&self) -> &str { \"length\" }\n\
+         fn run(&self, value: String, _: &ExecutionContext) -> Result<usize> { Ok(value.len()) }\n}\n\
+         fn main() -> Result { assert_eq!(Workflow::start().then(Length)?.run(\"crate\".into())?, 5); Ok(()) }\n",
     )?;
     run(&consumer, "cargo", &["generate-lockfile", "--offline"])?;
     run(&consumer, "cargo", &["run", "--locked", "--offline"])?;

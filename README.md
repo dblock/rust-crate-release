@@ -6,7 +6,7 @@ Composable release workflows for Rust crates, ported from [ruby-gem-release](htt
 
 ## Installation
 
-This is an unpublished scaffold requiring Rust 1.99.1 or later. To work on it:
+This is an unpublished Rust library requiring Rust 1.99.1 or later. To work on it:
 
 ```sh
 git clone https://github.com/dblock/rust-crate-release.git
@@ -16,11 +16,11 @@ cargo test --locked --workspace
 
 ## Usage
 
-Release functionality is not implemented yet. The agreed first implementation includes a Rust library, the `rcr` executable, `rcr.toml` configuration, and GitHub Actions interfaces with full Ruby/npm feature parity; see [Design](DESIGN.md).
+Start with [Typed Workflows](docs/workflows.md) to compose Rust steps and hooks. Changelog editing and semantic analysis are library building blocks; the release engine, `rcr` executable, `rcr.toml`, and publishing Actions are not implemented yet. See [Design](DESIGN.md) for the full port scope.
 
 ## Contributing
 
-Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), and [Agent Instructions](AGENTS.md).
+Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), and [Semantic Releases](docs/semantic.md).
 
 ## License
 

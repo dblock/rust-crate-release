@@ -117,11 +117,10 @@ fn workflow(source: &str) -> std::result::Result<(), String> {
 
 pub fn check(root: &Path) -> Result {
     let mut errors = Vec::new();
-    for entry in fs::read_dir(root)? {
-        let path = entry?.path();
-        if path.extension().is_some_and(|extension| extension == "md") {
-            markdown(&fs::read_to_string(&path)?)
-                .unwrap_or_else(|error| errors.push(format!("{}: {error}", path.display())));
+    check_markdown_directory(root, false, &mut errors)?;
+    for directory in ["docs", "examples"] {
+        if root.join(directory).is_dir() {
+            check_markdown_directory(&root.join(directory), true, &mut errors)?;
         }
     }
     for entry in fs::read_dir(root.join(".github/workflows"))? {
@@ -139,6 +138,19 @@ pub fn check(root: &Path) -> Result {
     } else {
         Err(errors.join("\n").into())
     }
+}
+
+fn check_markdown_directory(root: &Path, recursive: bool, errors: &mut Vec<String>) -> Result {
+    for entry in fs::read_dir(root)? {
+        let path = entry?.path();
+        if path.extension().is_some_and(|extension| extension == "md") {
+            markdown(&fs::read_to_string(&path)?)
+                .unwrap_or_else(|error| errors.push(format!("{}: {error}", path.display())));
+        } else if recursive && path.is_dir() {
+            check_markdown_directory(&path, true, errors)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -27,11 +27,11 @@ The Package command uses `cargo package --locked --allow-dirty` so contributors 
 
 ## Tests
 
-Scaffold tests live alongside maintenance code in `xtask/src/`; they cover Markdown paragraph/title policies and YAML-aware workflow display names, including invalid cases, expressions, and unrelated machine fields. The public library is intentionally empty until the implementation PR. Do not add trivial API tests or fake release commands to inflate scaffold coverage.
+Maintenance tests live alongside code in `xtask/src/`; they cover Markdown paragraph/title policies and YAML-aware workflow display names, including invalid cases, expressions, and unrelated machine fields. Library unit tests live beside their modules in `src/` and rustdoc examples exercise public composition. Do not add trivial API tests or fake release commands to inflate coverage.
 
 Implementation tests belong in `tests/` and must exercise the real release engine against isolated Git remotes and a local simulated registry. Share source/installed executable fixtures. Cover lifecycle order, trusted edit boundaries, exact uploaded bytes, failed pushes, delayed visibility, and recovery after partial success. Optional artifact overrides must behave consistently when set, absent, or empty. No live publication, credential exchange, or registry mutation in tests.
 
-Aim near 100% of project-owned runtime line/branch coverage where supported, including subprocess errors and meaningful edge cases; report gaps rather than hiding them with exclusions or trivial assertions. The Test workflow submits LCOV to Coveralls; local coverage measures maintenance tooling until runtime code exists. Coveralls repository enablement, if required, is an external maintainer setting, not proof of local publication or authentication.
+Aim near 100% of project-owned runtime line/branch coverage where supported, including subprocess errors and meaningful edge cases; report gaps rather than hiding them with exclusions or trivial assertions. The Test workflow submits LCOV to Coveralls; runtime and maintenance code are measured together. Coveralls repository enablement, if required, is an external maintainer setting, not proof of local publication or authentication.
 
 ## Documentation and Tooling
 

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-This is an unpublished `0.1.0` scaffold. No release CLI, registry publisher, release workflow, credentials, trusted publisher, or GitHub release environment is configured. Instructions below define acceptance criteria for the implementation; they are not executable release commands or authorization to publish.
+This is an unpublished `0.1.0` library with typed workflow/changelog/semantic building blocks. No release CLI, registry publisher, release workflow, credentials, trusted publisher, or GitHub release environment is configured. Instructions below define acceptance criteria for the remaining implementation; they are not executable release commands or authorization to publish.
 
 ## Validate the Distribution
 
