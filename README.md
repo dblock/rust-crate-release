@@ -53,14 +53,16 @@ Preparation still edits, validates, commits, and tags locally; it is not a read-
 
 ## Configuration
 
-For a project hosted at `acme/widget` with default branch `main`, add `rcr.toml`:
+No `rcr.toml` is required for a standard release. rcr infers the default branch from GitHub Actions metadata or the Git remote's HEAD, and the GitHub repository from Actions metadata or the configured remote URL. GitHub Releases are created automatically when a GitHub repository is detected.
+
+Create `rcr.toml` only to override defaults. For example, to skip GitHub Release creation and next-development preparation:
 
 ```toml
-default-branch = "main"
-github-repository = "acme/widget"
+github-release = false
+next-version = "disabled"
 ```
 
-Replace both values with your project's details. Numeric releases use the manifest version, `CHANGELOG.md` with a meaningful `[Unreleased]` section, and a next patch version by default. Keep `Cargo.lock` committed. [CLI and Configuration](docs/cli.md) covers changelog formats, semantic releases, validation commands, and version policies. Use the [Rust library](docs/releases.md) from your own runner for custom typed components, hooks, and observers.
+Numeric releases use the manifest version, `CHANGELOG.md` with a meaningful `[Unreleased]` section, and a next patch version by default. Keep `Cargo.lock` committed. [CLI and Configuration](docs/cli.md) covers optional branch/repository overrides, changelog formats, semantic releases, validation commands, and version policies. Use the [Rust library](docs/releases.md) from your own runner for custom typed components, hooks, and observers.
 
 ## Custom Hooks
 

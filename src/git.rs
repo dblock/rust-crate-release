@@ -42,14 +42,7 @@ pub struct Git {
 }
 
 impl Git {
-    pub fn new(
-        root: impl Into<PathBuf>,
-        branch: impl Into<String>,
-        remote: impl Into<String>,
-    ) -> Result<Self> {
-        let root = dunce::canonicalize(root.into())?;
-        let branch = branch.into();
-        let remote = remote.into();
+    fn validate_remote(remote: &str) -> Result {
         if remote.is_empty()
             || remote.starts_with('-')
             || !remote
@@ -58,6 +51,41 @@ impl Git {
         {
             return Err(Error::invalid("invalid Git remote name"));
         }
+        Ok(())
+    }
+
+    pub(crate) fn default_branch(root: &Path, remote: &str) -> Result<String> {
+        Self::validate_remote(remote)?;
+        let output = command::text(command::run(
+            root,
+            "git",
+            &["ls-remote", "--symref", remote, "HEAD"],
+        )?)?;
+        let branches: Vec<_> = output
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("ref: refs/heads/")?
+                    .strip_suffix("\tHEAD")
+            })
+            .collect();
+        let [branch] = branches.as_slice() else {
+            return Err(Error::invalid(
+                "cannot infer default branch from remote HEAD; set default-branch in rcr.toml",
+            ));
+        };
+        command::run(root, "git", &["check-ref-format", "--branch", branch])?;
+        Ok((*branch).into())
+    }
+
+    pub fn new(
+        root: impl Into<PathBuf>,
+        branch: impl Into<String>,
+        remote: impl Into<String>,
+    ) -> Result<Self> {
+        let root = dunce::canonicalize(root.into())?;
+        let branch = branch.into();
+        let remote = remote.into();
+        Self::validate_remote(&remote)?;
         command::run(&root, "git", &["check-ref-format", "--branch", &branch])?;
         let actual = command::text(command::run(
             &root,
@@ -528,6 +556,46 @@ mod tests {
         fs::write(git.root().join(name), body)?;
         let tree = git.stage_changes()?;
         git.commit(&tree, message)
+    }
+
+    #[test]
+    fn default_branch_uses_remote_head_instead_of_the_checked_out_branch() -> Result {
+        let project = GitProject::new(&[("README.md", "Initial\n")])?;
+        command::run(project.root(), "git", &["branch", "-m", "main"])?;
+        command::run(project.root(), "git", &["push", "origin", "main"])?;
+        command::run(
+            project.root(),
+            "git",
+            &[
+                "--git-dir",
+                project.remote().to_str().unwrap(),
+                "symbolic-ref",
+                "HEAD",
+                "refs/heads/main",
+            ],
+        )?;
+        command::run(project.root(), "git", &["switch", "-c", "topic"])?;
+        assert_eq!(Git::default_branch(project.root(), "origin")?, "main");
+        assert!(
+            Git::new(project.root(), "main", "origin")?
+                .inspect()
+                .is_err()
+        );
+        assert!(Git::default_branch(project.root(), "--upload-pack=bad").is_err());
+        command::run(
+            project.root(),
+            "git",
+            &[
+                "--git-dir",
+                project.remote().to_str().unwrap(),
+                "symbolic-ref",
+                "HEAD",
+                "refs/heads/missing",
+            ],
+        )?;
+        let error = Git::default_branch(project.root(), "origin").unwrap_err();
+        assert!(error.to_string().contains("set default-branch in rcr.toml"));
+        Ok(())
     }
 
     #[test]

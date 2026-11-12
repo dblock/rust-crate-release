@@ -119,6 +119,7 @@ pub struct Configuration {
     pub runner: Option<Vec<String>>,
     pub workflow: Mode,
     pub manifest: PathBuf,
+    /// Empty selects Actions repository metadata or the remote's advertised HEAD.
     pub default_branch: String,
     pub remote: String,
     pub timezone: String,
@@ -128,6 +129,8 @@ pub struct Configuration {
     pub sections: Vec<String>,
     pub next_version: Option<String>,
     pub validation: Vec<Vec<String>>,
+    /// Enables hosting when a GitHub repository is configured or discovered.
+    pub github_release: bool,
     pub github_repository: Option<String>,
     pub artifact_directory: Option<PathBuf>,
     pub verification_attempts: usize,
@@ -145,7 +148,7 @@ impl Default for Configuration {
             runner: None,
             workflow: Mode::Numeric,
             manifest: "Cargo.toml".into(),
-            default_branch: "master".into(),
+            default_branch: String::new(),
             remote: "origin".into(),
             timezone: "UTC".into(),
             changelog: "CHANGELOG.md".into(),
@@ -154,6 +157,7 @@ impl Default for Configuration {
             sections: Vec::new(),
             next_version: None,
             validation: CommandValidator::default().commands,
+            github_release: true,
             github_repository: None,
             artifact_directory: None,
             verification_attempts: 6,
@@ -163,6 +167,53 @@ impl Default for Configuration {
 }
 
 impl Configuration {
+    fn branch(&self, root: &Path, values: &impl Fn(&str) -> Option<String>) -> Result<String> {
+        if !self.default_branch.is_empty() {
+            return Ok(self.default_branch.clone());
+        }
+        if values("GITHUB_ACTIONS").as_deref() == Some("true") {
+            if let Some(branch) = values("RCR_DEFAULT_BRANCH").filter(|value| !value.is_empty()) {
+                return Ok(branch);
+            }
+            if let Some(path) = values("GITHUB_EVENT_PATH").filter(|value| !value.is_empty()) {
+                let event: Value = serde_json::from_slice(&fs::read(path)?)?;
+                if let Some(branch) = event["repository"]["default_branch"]
+                    .as_str()
+                    .filter(|value| !value.is_empty())
+                {
+                    return Ok(branch.into());
+                }
+            }
+        }
+        Git::default_branch(root, &self.remote)
+    }
+
+    fn hosting_repository(
+        &self,
+        root: &Path,
+        values: &impl Fn(&str) -> Option<String>,
+    ) -> Result<Option<String>> {
+        if !self.github_release {
+            return Ok(None);
+        }
+        if let Some(repository) = &self.github_repository {
+            return Ok(Some(repository.clone()));
+        }
+        if values("GITHUB_ACTIONS").as_deref() == Some("true")
+            && values("GITHUB_SERVER_URL").is_none_or(|value| value == "https://github.com")
+            && let Some(repository) = values("GITHUB_REPOSITORY").filter(|value| !value.is_empty())
+        {
+            crate::hosting::validate_repository(&repository)?;
+            return Ok(Some(repository));
+        }
+        let remote = crate::command::text(crate::command::run(
+            root,
+            "git",
+            &["remote", "get-url", &self.remote],
+        )?)?;
+        repository_from_remote(&remote)
+    }
+
     pub fn load(root: &Path, explicit: Option<&Path>) -> Result<Self> {
         let path = root.join(explicit.unwrap_or_else(|| Path::new("rcr.toml")));
         let config: Self = match fs::read_to_string(path) {
@@ -235,6 +286,28 @@ impl Configuration {
         ChangelogTemplate::new(config.placeholder.clone(), config.sections.clone())?;
         Ok(config)
     }
+}
+
+fn repository_from_remote(remote: &str) -> Result<Option<String>> {
+    let path = if let Some(path) = remote.strip_prefix("git@github.com:") {
+        path.to_owned()
+    } else {
+        let Ok(url) = reqwest::Url::parse(remote) else {
+            return Ok(None);
+        };
+        if url.host_str() != Some("github.com")
+            || !matches!(url.scheme(), "https" | "ssh" | "git")
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Ok(None);
+        }
+        url.path().trim_start_matches('/').to_owned()
+    };
+    let path = path.trim_end_matches('/');
+    let repository = path.strip_suffix(".git").unwrap_or(path);
+    crate::hosting::validate_repository(repository)?;
+    Ok(Some(repository.into()))
 }
 
 fn phase_command(key: &str, fallback: Option<Vec<String>>) -> Result<Option<Vec<String>>> {
@@ -675,7 +748,14 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
         Command::Release(args) => ("release", args),
         Command::Verify { .. } | Command::Actions { .. } => unreachable!(),
     };
-    let repository = Arc::new(Git::new(&root, &config.default_branch, &config.remote)?);
+    let values = |key: &str| std::env::var(key).ok();
+    let branch = config.branch(&root, &values)?;
+    let repository = Arc::new(Git::new(&root, &branch, &config.remote)?);
+    let hosting_repository = if cli.test_registry.is_none() {
+        config.hosting_repository(&root, &values)?
+    } else {
+        None
+    };
     let package = Arc::new(CargoPackage::from_manifest(root.join(&config.manifest))?);
     let directory = cli
         .artifact_directory
@@ -730,14 +810,14 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
     });
     workflow.components.next_version = Arc::new(next);
     workflow.components.verifier = Arc::new(verifier);
-    workflow.components.execution = Arc::from(execution_provider(&config.default_branch));
+    workflow.components.execution = Arc::from(execution_provider(&branch));
     if let Some(id) = cli.github_artifact_id {
         workflow.components.preserver = Arc::new(match cli.test_artifact_api {
             Some(endpoint) => crate::actions::GitHubArtifacts::for_test_server(id, &endpoint)?,
             None => crate::actions::GitHubArtifacts::new(id)?,
         });
     }
-    if let Some(repository) = config.github_repository {
+    if let Some(repository) = hosting_repository {
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }
     if let Some(path) = cli.test_host {
@@ -812,5 +892,135 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
         result!(workflow.prepare(request))
     } else {
         result!(workflow.release(request))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::GitProject;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn repository_defaults_use_actions_metadata_and_respect_explicit_overrides() -> Result {
+        let project = GitProject::cargo_library()?;
+        let root = project.root();
+        let mut config = Configuration::load(root, None)?;
+        assert_eq!(config.branch(root, &|_| None)?, "master");
+        assert!(Configuration::load(root, Some(Path::new("missing.toml"))).is_err());
+        let mut values: BTreeMap<String, String> = [
+            ("GITHUB_ACTIONS", "true"),
+            ("GITHUB_SERVER_URL", "https://github.com"),
+            ("GITHUB_REPOSITORY", "consumer/widget"),
+            ("RCR_DEFAULT_BRANCH", "main"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.into(), value.into()))
+        .collect();
+        assert_eq!(
+            config.branch(root, &|key| values.get(key).cloned())?,
+            "main"
+        );
+        assert_eq!(
+            config.hosting_repository(root, &|key| values.get(key).cloned())?,
+            Some("consumer/widget".into())
+        );
+        values.remove("RCR_DEFAULT_BRANCH");
+        let event = project.temporary_directory().join("event.json");
+        fs::write(&event, r#"{"repository":{"default_branch":"trunk"}}"#)?;
+        values.insert("GITHUB_EVENT_PATH".into(), event.to_string_lossy().into());
+        assert_eq!(
+            config.branch(root, &|key| values.get(key).cloned())?,
+            "trunk"
+        );
+        config.default_branch = "release".into();
+        config.github_repository = Some("override/project".into());
+        assert_eq!(
+            config.branch(root, &|key| values.get(key).cloned())?,
+            "release"
+        );
+        assert_eq!(
+            config.hosting_repository(root, &|key| values.get(key).cloned())?,
+            Some("override/project".into())
+        );
+        config.github_release = false;
+        assert_eq!(config.hosting_repository(root, &|_| None)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn local_repository_inference_uses_the_configured_remote_without_actions_environment() -> Result
+    {
+        let project = GitProject::cargo_library()?;
+        crate::command::run(
+            project.root(),
+            "git",
+            &["remote", "rename", "origin", "upstream"],
+        )?;
+        fs::write(project.root().join("rcr.toml"), "remote = \"upstream\"\n")?;
+        let config = Configuration::load(project.root(), None)?;
+        let values = |key: &str| match key {
+            "RCR_DEFAULT_BRANCH" => Some("not-the-default".into()),
+            "GITHUB_REPOSITORY" => Some("not-the/project".into()),
+            _ => None,
+        };
+        assert_eq!(config.branch(project.root(), &values)?, "master");
+        assert_eq!(config.hosting_repository(project.root(), &values)?, None);
+        crate::command::run(
+            project.root(),
+            "git",
+            &[
+                "remote",
+                "set-url",
+                "upstream",
+                "git@github.com:acme/widget.git",
+            ],
+        )?;
+        assert_eq!(
+            config.hosting_repository(project.root(), &values)?,
+            Some("acme/widget".into())
+        );
+        let enterprise = |key: &str| match key {
+            "GITHUB_ACTIONS" => Some("true".into()),
+            "GITHUB_SERVER_URL" => Some("https://github.example.com".into()),
+            "GITHUB_REPOSITORY" => Some("not-the/project".into()),
+            _ => None,
+        };
+        assert_eq!(
+            config.hosting_repository(project.root(), &enterprise)?,
+            Some("acme/widget".into())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn hosting_inference_accepts_only_literal_github_repository_urls() -> Result {
+        for remote in [
+            "https://github.com/acme/widget",
+            "https://github.com/acme/widget.git",
+            "git@github.com:acme/widget.git",
+            "ssh://git@github.com/acme/widget.git",
+            "git://github.com/acme/widget.git",
+        ] {
+            assert_eq!(repository_from_remote(remote)?, Some("acme/widget".into()));
+        }
+        for remote in [
+            "/tmp/remote.git",
+            "https://gitlab.com/acme/widget.git",
+            "git@github.example.com:acme/widget.git",
+            "https://github.com.example.com/acme/widget.git",
+            "https://github.com/acme/widget?query",
+            "https://github.com/acme/widget#fragment",
+        ] {
+            assert_eq!(repository_from_remote(remote)?, None);
+        }
+        for remote in [
+            "https://github.com/acme",
+            "https://github.com/acme/widget/extra",
+            "git@github.com:acme/widget%2fother.git",
+        ] {
+            assert!(repository_from_remote(remote).is_err());
+        }
+        Ok(())
     }
 }

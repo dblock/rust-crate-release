@@ -16,6 +16,8 @@ fn process(binary: &Path, root: &Path) -> Command {
         .current_dir(root)
         .env_remove("CRATE_ARCHIVE")
         .env_remove("GITHUB_ACTIONS")
+        .env_remove("GITHUB_EVENT_PATH")
+        .env_remove("RCR_DEFAULT_BRANCH")
         .env_remove("RCR_CONFIG")
         .env_remove("GITHUB_STEP_SUMMARY");
     for key in [
@@ -57,6 +59,7 @@ fn commit(root: &Path) -> Result {
 
 /// Shared by the source executable and the binary installed from the actual archive.
 pub fn check(binary: &Path) -> Result {
+    check_without_configuration(binary)?;
     #[cfg(unix)]
     {
         let fixture = GitProject::cargo_library()?;
@@ -368,12 +371,7 @@ pub fn check(binary: &Path) -> Result {
 }
 
 fn check_action(binary: &Path) -> Result {
-    let fixture = GitProject::cargo_library()?;
-    fs::write(
-        fixture.root().join("rcr.toml"),
-        "changelog-format = \"intridea\"\nverification-delay-seconds = 0\n",
-    )?;
-    commit(fixture.root())?;
+    let fixture = project_without_configuration()?;
     let temporary = fixture.temporary_directory();
     let registry = temporary.join("action-registry");
     let output_path = temporary.join("action-output");
@@ -384,16 +382,16 @@ fn check_action(binary: &Path) -> Result {
             .env("GITHUB_ACTIONS", "true")
             .env("GITHUB_SERVER_URL", "https://github.com")
             .env("GITHUB_EVENT_NAME", "workflow_dispatch")
-            .env("GITHUB_REF", "refs/heads/master")
+            .env("GITHUB_REF", "refs/heads/main")
             .env("GITHUB_REPOSITORY", "fixture/project")
             .env("GITHUB_RUN_ID", "42")
             .env("GITHUB_RUN_ATTEMPT", "1")
             .env(
                 "GITHUB_WORKFLOW_REF",
-                "fixture/project/.github/workflows/release.yml@refs/heads/master",
+                "fixture/project/.github/workflows/release.yml@refs/heads/main",
             )
             .env("RUNNER_ENVIRONMENT", "github-hosted")
-            .env("RCR_DEFAULT_BRANCH", "master")
+            .env("RCR_DEFAULT_BRANCH", "main")
             .env_remove("RCR_CONFIG")
             .env_remove("RCR_VERSION")
             .env_remove("CARGO_REGISTRY_TOKEN")
@@ -407,7 +405,7 @@ fn check_action(binary: &Path) -> Result {
         .args(["actions", "prepare"])
         .output()?;
     assert!(!unsafe_caller.status.success());
-    Git::new(fixture.root(), "master", "origin")?.assert_clean()?;
+    Git::new(fixture.root(), "main", "origin")?.assert_clean()?;
     let prepared = success(action_process().args(["actions", "prepare"]).output()?)?;
     let directory = fixture.root().join(".git/rcr");
     let files = [
@@ -461,6 +459,86 @@ fn check_action(binary: &Path) -> Result {
         fs::read(registry.join("release-fixture-0.1.0.crate"))?,
         fs::read(fixture.root().join(".git/rcr/release-fixture-0.1.0.crate"))?
     );
-    Git::new(fixture.root(), "master", "origin")?.assert_clean()?;
+    Git::new(fixture.root(), "main", "origin")?.assert_clean()?;
+    Ok(())
+}
+
+fn project_without_configuration() -> Result<GitProject> {
+    let fixture = GitProject::cargo_library()?;
+    fs::write(
+        fixture.root().join("CHANGELOG.md"),
+        "# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Initial fixture.\n",
+    )?;
+    for args in [
+        vec!["branch", "-m", "main"],
+        vec!["add", "--all"],
+        vec!["commit", "-m", "Prepare configuration-free project"],
+        vec!["push", "-u", "origin", "main"],
+        vec![
+            "--git-dir",
+            fixture.remote().to_str().unwrap(),
+            "symbolic-ref",
+            "HEAD",
+            "refs/heads/main",
+        ],
+    ] {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(fixture.root())
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    assert!(!fixture.root().join("rcr.toml").exists());
+    Ok(fixture)
+}
+
+fn check_without_configuration(binary: &Path) -> Result {
+    let fixture = project_without_configuration()?;
+    let registry = fixture.temporary_directory().join("registry");
+    let completed = success(
+        process(binary, fixture.root())
+            .arg("--test-registry")
+            .arg(&registry)
+            .arg("release")
+            .output()?,
+    )?;
+    assert_eq!(completed["version"], "0.1.0");
+    assert_eq!(completed["next_version"], "0.1.1");
+    assert_eq!(completed["verification"]["status"], "verified");
+    assert_eq!(
+        fs::read(registry.join("release-fixture-0.1.0.crate"))?,
+        fs::read(completed["archive"].as_str().unwrap())?
+    );
+    let git = Git::new(fixture.root(), "main", "origin")?;
+    assert_eq!(
+        git.remote_tag("v0.1.0")?,
+        Some(completed["commit"].as_str().unwrap().into())
+    );
+    assert_eq!(
+        git.remote_head()?,
+        completed["development_commit"].as_str().unwrap()
+    );
+    git.assert_clean()?;
+    assert!(!fixture.root().join("rcr.toml").exists());
+    let verified = success(
+        process(binary, fixture.temporary_directory())
+            .arg("--test-registry")
+            .arg(&registry)
+            .args([
+                "verify",
+                "--name",
+                "release-fixture",
+                "--release-version",
+                "0.1.0",
+                "--archive",
+                completed["archive"].as_str().unwrap(),
+            ])
+            .output()?,
+    )?;
+    assert_eq!(verified["verification"]["status"], "verified");
     Ok(())
 }
