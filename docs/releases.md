@@ -70,6 +70,37 @@ Implement `LifecycleHook<Analyzed, Edited>` for preparation, or `LifecycleHook<H
 
 Next hooks also run when next-development preparation is disabled; check `NextEdited::next_version()` before performing an operation that requires a next version. Hook failures propagate, and recovery may invoke hooks again, so keep edits repeatable and do not move HEAD, stage, or commit inside a hook. Source edits in publication/verification/other phases are not supported.
 
+## Test a Consumer Release
+
+`testing::ReleaseFixture` runs the production CLI/configuration/engine against a real disposable Git remote, `LocalRegistry`, and `DirectoryReleaseHost`. Create its project with `GitProject::from_project(source, &CopySelection::Paths(files))?` to copy reviewed manifests, lockfile, source, `rcr.toml`, and runner files without copying Git metadata or build output. Copy selection is explicit; existing project `.gitignore` contents are preserved.
+
+```no_run
+use std::path::{Path, PathBuf};
+use rust_crate_release::{Result, testing::{CopySelection, GitProject, ReleaseFixture}};
+
+fn check_release() -> Result {
+    let files = ["Cargo.toml", "Cargo.lock", "src/lib.rs", "rcr.toml", "CHANGELOG.md"]
+        .map(PathBuf::from).to_vec();
+    let project = GitProject::from_project(Path::new("."), &CopySelection::Paths(files))?;
+    let mut fixture = ReleaseFixture::new(project)?;
+    fixture.configure_workflow(|workflow| {
+        // Register the same project-owned hooks used by the production runner.
+        let _ = workflow;
+        Ok(())
+    });
+    let released = fixture.release(None)?;
+    assert_eq!(released["verification"]["status"], "verified");
+    let release_manifest = fixture.remote_file("v0.1.0", Path::new("Cargo.toml"))?;
+    let development_manifest = fixture.remote_file("master", Path::new("Cargo.toml"))?;
+    assert_ne!(release_manifest, development_manifest);
+    Ok(())
+}
+```
+
+`configure_workflow` receives the actual configured production builder. After configuration, the facade binds publication, hosting, execution, preservation, and bounded verification to its local adapters. `run(&args)` accepts ordinary CLI arguments, including explicit preparation/input transport; no receipt authorizes recovery. `remote_file(reference, path)` returns exact bytes from a committed remote ref, not the current working tree, and rejects traversal/Git metadata paths.
+
+For the production runner in a separate process, call `fixture.process(program, prefix_args, &["release"])`. For example, use `cargo` plus `["run", "--locked", "--example", "release", "--"]`. Explicit test registry/host flags isolate both destinations, including a configured production GitHub repository; configured production publish commands are suppressed and publication credentials/OIDC inputs are removed. A trusted runner must retain these selected adapters. The process receives `RCR_FIXTURE_ACTIVE=1`; begin a consumer release integration test with `if testing::in_release_fixture() { return Ok(()); }` so child Cargo validation does not recursively release. In-process fixtures should exclude their own release integration test from validation, for example using `cargo test --locked --lib`. Other project validation still runs normally. Fixtures are not a sandbox for malicious trusted callbacks/providers.
+
 ## Capture Inputs Once
 
 A fresh request captures current package metadata, source commit, initial remote head, source timestamp, and release date. Dirty checkouts, wrong branches, source/remote divergence, conflicting tags, invalid versions, and nonreleasable semantic decisions fail closed. Dates use the configured IANA timezone; archives receive the captured source timestamp. Numeric overrides may increase the source manifest version but never decrease it.

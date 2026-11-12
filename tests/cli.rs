@@ -7,6 +7,94 @@ fn source_executable_uses_the_shared_release_fixtures() -> Result<(), Box<dyn st
 }
 
 #[test]
+fn consumer_facade_uses_production_configuration_and_isolates_both_destinations()
+-> Result<(), Box<dyn std::error::Error>> {
+    use rust_crate_release::{
+        Result,
+        engine::{Analyzed, Edited, Hosted, NextEdited},
+        execution::ExecutionContext,
+        hooks::LifecycleHook,
+        testing::{CopySelection, GitProject, ReleaseFixture},
+    };
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+    struct VersionFile(PathBuf);
+    impl LifecycleHook<Analyzed, Edited> for VersionFile {
+        fn id(&self) -> &str {
+            "version-file"
+        }
+        fn after(&self, output: &Edited, _: &ExecutionContext) -> Result {
+            fs::write(&self.0, output.release().version().to_string())?;
+            Ok(())
+        }
+    }
+    impl LifecycleHook<Hosted, NextEdited> for VersionFile {
+        fn id(&self) -> &str {
+            "next-version-file"
+        }
+        fn after(&self, output: &NextEdited, _: &ExecutionContext) -> Result {
+            fs::write(&self.0, output.next_version().unwrap().to_string())?;
+            Ok(())
+        }
+    }
+    let source = GitProject::cargo_library()?;
+    fs::write(
+        source.root().join("rcr.toml"),
+        "changelog-format = \"intridea\"\ngithub-repository = \"not-used/project\"\ndefault-branch = \"main\"\nremote = \"upstream\"\npublish-command = [\"must-not-run-a-production-publisher\"]\n",
+    )?;
+    let copied = || {
+        GitProject::from_project(
+            source.root(),
+            &CopySelection::Paths(
+                [
+                    "Cargo.toml",
+                    "Cargo.lock",
+                    "src/lib.rs",
+                    "CHANGELOG.md",
+                    "rcr.toml",
+                ]
+                .map(PathBuf::from)
+                .to_vec(),
+            ),
+        )
+    };
+    let mut fixture = ReleaseFixture::new(copied()?)?;
+    let version = fixture.project.root().join("VERSION");
+    fixture.configure_workflow(move |workflow| {
+        workflow.hooks.prepare = workflow.hooks.prepare.with(VersionFile(version.clone()));
+        workflow.hooks.next = workflow.hooks.next.with(VersionFile(version.clone()));
+        Ok(())
+    });
+    let released = fixture.release(None)?;
+    assert_eq!(released["verification"]["status"], "verified");
+    assert_eq!(
+        fixture.remote_file("v0.1.0", Path::new("VERSION"))?,
+        b"0.1.0"
+    );
+    assert_eq!(fixture.remote_file("main", Path::new("VERSION"))?, b"0.1.1");
+    assert!(fixture.remote_file("main", Path::new("../secret")).is_err());
+    assert_eq!(fixture.registry.publication_count(), 1);
+    assert_eq!(fixture.host.publication_count(), 1);
+    assert!(
+        fixture
+            .remote_file("--help", Path::new("Cargo.toml"))
+            .is_err()
+    );
+    let subprocess = ReleaseFixture::new(copied()?)?;
+    let output = subprocess.process(Path::new(env!("CARGO_BIN_EXE_rcr")), &[], &["release"])?;
+    assert_eq!(output["verification"]["status"], "verified");
+    assert!(
+        subprocess
+            .remote_file("v0.1.0", Path::new("Cargo.toml"))?
+            .windows(5)
+            .any(|window| window == b"0.1.0")
+    );
+    Ok(())
+}
+
+#[test]
 fn configured_project_runner_keeps_hooks_through_cli_and_actions()
 -> Result<(), Box<dyn std::error::Error>> {
     use rust_crate_release::testing::GitProject;

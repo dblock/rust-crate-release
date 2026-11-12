@@ -17,6 +17,19 @@ fn process(binary: &Path, root: &Path) -> Command {
         .env_remove("CRATE_ARCHIVE")
         .env_remove("GITHUB_ACTIONS")
         .env_remove("GITHUB_STEP_SUMMARY");
+    for key in [
+        "RCR_RUNNER",
+        "RCR_RUNNER_ACTIVE",
+        "RCR_PREPARE_COMMAND",
+        "RCR_PUBLISH_COMMAND",
+        "RCR_BUMP_COMMAND",
+        "RCR_VALIDATE_COMMAND",
+        "RCR_TEST_COMMAND",
+        "RCR_SUCCESS_COMMAND",
+        "RCR_FAILURE_COMMAND",
+    ] {
+        command.env_remove(key);
+    }
     command
 }
 

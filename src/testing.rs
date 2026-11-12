@@ -208,10 +208,21 @@ pub struct GitProject {
 
 impl GitProject {
     pub fn new(files: &[(&str, &str)]) -> Result<Self> {
+        Self::create(files, None)
+    }
+
+    pub fn from_project(source: &Path, selection: &CopySelection) -> Result<Self> {
+        Self::create(&[], Some((source, selection)))
+    }
+
+    fn create(files: &[(&str, &str)], source: Option<(&Path, &CopySelection)>) -> Result<Self> {
         let temporary = tempfile::tempdir()?;
         let root = temporary.path().join("project");
         let remote = temporary.path().join("remote.git");
         fs::create_dir_all(&root)?;
+        if let Some((source, selection)) = source {
+            copy_project_selected(source, &root, selection)?;
+        }
         command::run(
             temporary.path(),
             "git",
@@ -245,7 +256,9 @@ impl GitProject {
                 path_text(&hooks)?,
             ],
         )?;
-        fs::write(root.join(".gitignore"), "/target/\n/.rcr/\n")?;
+        if !root.join(".gitignore").exists() {
+            fs::write(root.join(".gitignore"), "/target/\n/.rcr/\n")?;
+        }
         for (path, contents) in files {
             safe_relative(Path::new(path))?;
             let path = root.join(path);
@@ -294,6 +307,185 @@ impl GitProject {
             ),
         ])
     }
+}
+
+type ConfigureFixture = dyn Fn(&mut crate::engine::ReleaseWorkflow) -> Result + Send + Sync;
+
+/// A configured production CLI/engine with real disposable Git and local destinations.
+pub struct ReleaseFixture {
+    pub project: GitProject,
+    pub registry: Arc<LocalRegistry>,
+    pub host: Arc<DirectoryReleaseHost>,
+    configure: Arc<ConfigureFixture>,
+}
+
+impl ReleaseFixture {
+    pub fn new(project: GitProject) -> Result<Self> {
+        let config = crate::cli::Configuration::load(project.root(), None)?;
+        if config.remote != "origin" {
+            command::run(
+                project.root(),
+                "git",
+                &["remote", "rename", "origin", &config.remote],
+            )?;
+        }
+        if config.default_branch != "master" {
+            command::run(
+                project.root(),
+                "git",
+                &["branch", "-m", &config.default_branch],
+            )?;
+            command::run(
+                project.root(),
+                "git",
+                &["push", "-u", &config.remote, &config.default_branch],
+            )?;
+            command::run(
+                project.root(),
+                "git",
+                &[
+                    "--git-dir",
+                    path_text(project.remote())?,
+                    "symbolic-ref",
+                    "HEAD",
+                    &format!("refs/heads/{}", config.default_branch),
+                ],
+            )?;
+        }
+        Ok(Self {
+            registry: Arc::new(LocalRegistry::new(
+                project.temporary_directory().join("registry"),
+            )?),
+            host: Arc::new(DirectoryReleaseHost::new(
+                project.temporary_directory().join("host"),
+            )?),
+            project,
+            configure: Arc::new(|_| Ok(())),
+        })
+    }
+
+    pub fn configure_workflow(
+        &mut self,
+        configure: impl Fn(&mut crate::engine::ReleaseWorkflow) -> Result + Send + Sync + 'static,
+    ) -> &mut Self {
+        self.configure = Arc::new(configure);
+        self
+    }
+
+    pub fn release(&self, version: Option<&str>) -> Result<serde_json::Value> {
+        let mut args = vec!["release"];
+        if let Some(version) = version {
+            args.extend(["--release-version", version]);
+        }
+        self.run(&args)
+    }
+
+    pub fn run(&self, args: &[&str]) -> Result<serde_json::Value> {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from(self.arguments(args))
+            .map_err(|error| Error::invalid(error.to_string()))?;
+        crate::cli::run_with(cli, &|workflow| {
+            (self.configure)(workflow)?;
+            workflow.components.publisher = self.registry.clone();
+            workflow.components.host = Some(self.host.clone());
+            workflow.components.execution = Arc::new(crate::execution::LocalExecutionProvider);
+            workflow.components.preserver = Arc::new(crate::engine::LocalArtifacts);
+            workflow.components.verifier = Arc::new(crate::engine::RegistryVerifier::new(
+                1,
+                std::time::Duration::ZERO,
+            )?);
+            Ok(())
+        })
+    }
+
+    fn arguments(&self, args: &[&str]) -> Vec<std::ffi::OsString> {
+        let mut command = vec![
+            "rcr".into(),
+            "--root".into(),
+            self.project.root().as_os_str().to_owned(),
+            "--test-registry".into(),
+            self.registry.root.as_os_str().to_owned(),
+            "--test-host".into(),
+            self.host.root.as_os_str().to_owned(),
+        ];
+        command.extend(args.iter().map(|arg| (*arg).into()));
+        command
+    }
+
+    /// Executes a compiled project runner or rcr with explicit local destinations.
+    pub fn process(
+        &self,
+        program: &Path,
+        prefix: &[&str],
+        args: &[&str],
+    ) -> Result<serde_json::Value> {
+        let mut command = std::process::Command::new(program);
+        command
+            .args(prefix)
+            .args(self.arguments(args).into_iter().skip(1))
+            .current_dir(self.project.root())
+            .env("RCR_FIXTURE_ACTIVE", "1")
+            .env_remove("GITHUB_ACTIONS")
+            .env_remove("CARGO_REGISTRY_TOKEN")
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("GH_TOKEN")
+            .env_remove("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+            .env_remove("ACTIONS_ID_TOKEN_REQUEST_URL")
+            .env_remove("RCR_RUNNER")
+            .env_remove("RCR_RUNNER_ACTIVE");
+        for key in [
+            "RCR_PREPARE_COMMAND",
+            "RCR_PUBLISH_COMMAND",
+            "RCR_BUMP_COMMAND",
+            "RCR_VALIDATE_COMMAND",
+            "RCR_TEST_COMMAND",
+            "RCR_SUCCESS_COMMAND",
+            "RCR_FAILURE_COMMAND",
+        ] {
+            command.env_remove(key);
+        }
+        let output = command.output()?;
+        if !output.status.success() {
+            return Err(Error::invalid(format!(
+                "fixture process failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+        serde_json::from_slice(&output.stdout)
+            .map_err(|_| Error::invalid("fixture runner must print one JSON result"))
+    }
+
+    pub fn remote_file(&self, reference: &str, path: &Path) -> Result<Vec<u8>> {
+        safe_relative(path)?;
+        let commit = command::text(command::run(
+            self.project.root(),
+            "git",
+            &[
+                "--git-dir",
+                path_text(self.project.remote())?,
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{reference}^{{commit}}"),
+            ],
+        )?)?;
+        Ok(command::run(
+            self.project.root(),
+            "git",
+            &[
+                "--git-dir",
+                path_text(self.project.remote())?,
+                "show",
+                &format!("{commit}:{}", path_text(path)?),
+            ],
+        )?
+        .stdout)
+    }
+}
+
+/// Guard a release integration test when its child validator runs Cargo tests.
+pub fn in_release_fixture() -> bool {
+    std::env::var("RCR_FIXTURE_ACTIVE").as_deref() == Ok("1")
 }
 
 pub(crate) fn path_text(path: &Path) -> Result<&str> {
