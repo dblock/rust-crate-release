@@ -97,6 +97,11 @@ pub fn check(binary: &Path) -> Result {
         prepare.args(["prepare", "--save-inputs", ".git/rcr/source-inputs.json"]);
         if override_mode == "provided" {
             prepare.args(["--release-version", released]);
+            #[cfg(unix)]
+            prepare.env(
+                "RCR_PREPARE_COMMAND",
+                r#"["sh","-c","printf '%s' \"$RCR_RELEASE_VERSION\" > PHASE_RELEASE"]"#,
+            );
         }
         let prepared = success(prepare.output()?)?;
         let archive = prepared["archive"]
@@ -109,6 +114,40 @@ pub fn check(binary: &Path) -> Result {
         assert!(!registry.exists());
         let inputs = root.join(".git/rcr/source-inputs.json");
         let original_inputs = fs::read(&inputs)?;
+        #[cfg(unix)]
+        if override_mode == "provided" {
+            let git = Git::new(root, "master", "origin")?;
+            let remote = git.remote_head()?;
+            let destination = registry.join(format!("release-fixture-{released}.crate"));
+            for script in ["true", "printf invalid > \"$1\""] {
+                let failed = process(binary, root)
+                    .args(["--artifact-directory", storage])
+                    .arg("--test-registry")
+                    .arg(&registry)
+                    .args(["release", "--inputs", ".git/rcr/source-inputs.json"])
+                    .env(
+                        "RCR_PREPARE_COMMAND",
+                        r#"["sh","-c","printf '%s' \"$RCR_RELEASE_VERSION\" > PHASE_RELEASE"]"#,
+                    )
+                    .env(
+                        "RCR_PUBLISH_COMMAND",
+                        serde_json::to_string(&[
+                            "sh",
+                            "-c",
+                            script,
+                            "publish",
+                            destination.to_str().unwrap(),
+                        ])?,
+                    )
+                    .output()?;
+                assert!(!failed.status.success(), "unproven publisher must fail");
+                assert_eq!(git.remote_head()?, remote);
+                assert!(git.remote_tag(&format!("v{released}"))?.is_none());
+                if destination.exists() {
+                    fs::remove_file(&destination)?;
+                }
+            }
+        }
         let mut release = process(binary, root);
         release.args(["--artifact-directory", storage]);
         release.arg("--test-registry").arg(&registry).args([
@@ -126,10 +165,41 @@ pub fn check(binary: &Path) -> Result {
             }
             _ => {}
         }
+        #[cfg(unix)]
+        if override_mode == "provided" {
+            release
+                .env(
+                    "RCR_PREPARE_COMMAND",
+                    r#"["sh","-c","printf '%s' \"$RCR_RELEASE_VERSION\" > PHASE_RELEASE"]"#,
+                )
+                .env(
+                    "RCR_BUMP_COMMAND",
+                    r#"["sh","-c","printf '%s' \"$RCR_NEXT_VERSION\" > PHASE_NEXT"]"#,
+                )
+                .env("RCR_TEST_COMMAND", r#"["sh","-c","test -f PHASE_RELEASE"]"#)
+                .env(
+                    "RCR_PUBLISH_COMMAND",
+                    serde_json::to_string(&[
+                        "sh",
+                        "-c",
+                        "cp \"$CRATE_ARCHIVE\" \"$1\"",
+                        "publish",
+                        registry
+                            .join(format!("release-fixture-{released}.crate"))
+                            .to_str()
+                            .unwrap(),
+                    ])?,
+                );
+        }
         let completed = success(release.output()?)?;
         assert_eq!(completed["version"], released);
         assert_eq!(completed["next_version"], next);
         assert_eq!(completed["verification"]["status"], "verified");
+        #[cfg(unix)]
+        if override_mode == "provided" {
+            assert_eq!(fs::read_to_string(root.join("PHASE_RELEASE"))?, released);
+            assert_eq!(fs::read_to_string(root.join("PHASE_NEXT"))?, next);
+        }
         if override_mode == "empty" {
             assert!(!root.join("CHANGELOG.md").exists());
         }

@@ -182,6 +182,16 @@ Before registry mutation, Rust reads the immutable artifact through GitHub's pub
 
 Names are immutable within a run/attempt; conflicts fail rather than overwrite recovery evidence. A new attempt captures fresh bound inputs instead of restoring an older attempt's state. Deliberate same-attempt retries reverify the snapshot and reconcile actual outputs. Downloaded diagnostics are never interpreted as skip instructions. Repository tokens never follow signed download redirects, and raw tokens, signed URLs, and service bodies are not echoed.
 
+## Customize Release Phases
+
+The reusable workflow accepts `toolchain` (default `1.99.1`, which is the minimum), `git-user-name`, and `git-user-email`. These select the project/tool runtime and release commit identity without editing the shared workflow. A composite-action caller configures its own Git identity.
+
+Both entry points accept direct JSON argv inputs: `validate-command` replaces the configured validation argv, `test-command` appends an additional source/development validation command, `prepare-command` edits files after release metadata preparation, and `bump-command` edits files after optional next-development metadata preparation. Edit commands finish before trusted staging and real validation. Their environment provides `RCR_RELEASE_VERSION` and, for development, `RCR_NEXT_VERSION`. Omitted/empty inputs retain existing behavior. `prepare-command`, `publish-command`, and `bump-command` also accept TOML argv configuration; `RCR_*_COMMAND` environment selections take precedence. Shell syntax requires an explicit shell program in argv.
+
+`publish-command` replaces only registry upload, after immutable artifact preservation and release-ref checks. It receives the exact retained `CRATE_ARCHIVE` and release version. On success, rcr independently requires that version's registry checksum and downloaded bytes to match before Git push; a matching existing version skips the command. No successful exit or callback flag alone proves publication. The command owns its authentication and must make the version visible before returning; otherwise reconcile later with the original inputs rather than automatically retrying an ambiguous upload. The default SDK publisher remains recommended for crates.io OIDC.
+
+These commands cannot replace the mandatory archive consumer check, source/commit identity checks, independent remote artifact verification, or final verification. Use a typed project runner for more elaborate provider composition.
+
 ## Terminal Callbacks
 
 The composite and reusable workflows accept `success-command` and `failure-command` as JSON argv, for example `["cargo","run","--locked","--example","notify","--"]`. Alternatively configure `success = ["program", "argument"]` and `failure = ["program", "argument"]` in `rcr.toml`. Commands execute directly in the project root without implicit shell evaluation. The terminal `always()` step covers preparation, external preservation, publication, and diagnostic-upload failures without reporting success twice. Ordinary local `rcr release` uses the same configured callbacks; preparation alone does not run them.
