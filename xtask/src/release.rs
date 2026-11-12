@@ -123,7 +123,14 @@ mod tests {
         }
         fs::write(
             project.root().join("rcr.toml"),
-            "changelog-format = \"intridea\"\n",
+            include_str!("../../rcr.toml")
+                .lines()
+                .find(|line| line.starts_with("changelog-format = "))
+                .ok_or_else(|| Error::invalid("missing repository changelog format"))?,
+        )?;
+        fs::write(
+            project.root().join("CHANGELOG.md"),
+            "# Changelog\n\n## [Unreleased]\n\n### Changed\n\n- Exercise the maintenance release.\n\n[Unreleased]: https://github.com/example/project/compare/v0.1.0...master\n",
         )?;
         let git = Git::new(project.root(), "master", "origin")?;
         let tree = git.stage_changes()?;
@@ -156,6 +163,18 @@ mod tests {
         );
         assert_eq!(fixture.registry.publication_count(), 1);
         assert_eq!(fixture.host.publication_count(), 1);
+        let release_changelog =
+            String::from_utf8(fixture.remote_file("v0.2.0", Path::new("CHANGELOG.md"))?)
+                .map_err(|_| Error::invalid("non-UTF-8 release changelog"))?;
+        assert!(release_changelog.contains("## [0.2.0] - "));
+        assert!(!release_changelog.contains("## [Unreleased]"));
+        let development_changelog =
+            String::from_utf8(fixture.remote_file("master", Path::new("CHANGELOG.md"))?)
+                .map_err(|_| Error::invalid("non-UTF-8 development changelog"))?;
+        assert!(development_changelog.contains("## [Unreleased]"));
+        assert!(development_changelog.contains("## [0.2.0] - "));
+        assert!(development_changelog.contains("/compare/v0.2.0...master"));
+        assert!(development_changelog.contains("/compare/v0.1.0...v0.2.0"));
         Ok(())
     }
 }
