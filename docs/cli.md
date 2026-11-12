@@ -7,7 +7,7 @@ For automated releases, start with [README Usage](../README.md#usage); Actions i
 To use rcr locally, install it with Rust 1.99.1 or later:
 
 ```sh
-cargo install --locked rust-crate-release --version 0.1.0
+cargo install --locked rust-crate-release --version 0.1.1
 ```
 
 | Command | What It Does |

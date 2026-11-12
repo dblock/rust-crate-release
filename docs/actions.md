@@ -107,9 +107,9 @@ permissions:
 
 jobs:
   release:
-    uses: dblock/rust-crate-release/.github/workflows/release.yml@v0.1.0
+    uses: dblock/rust-crate-release/.github/workflows/release.yml@v0.1.1
     with:
-      tool-ref: v0.1.0
+      tool-ref: v0.1.1
       version: ${{ inputs.version }}
 ```
 
@@ -172,7 +172,7 @@ The sections below are advanced reference. They are not additional setup steps.
 
 ## Custom Jobs with the Composite Action
 
-Use `dblock/rust-crate-release@v0.1.0` for custom job layouts beyond the reusable workflow's `setup-command` hook. A composite cannot impose job-level environment, permissions, concurrency, or checkout policy. Supply them explicitly:
+Use `dblock/rust-crate-release@v0.1.1` for custom job layouts beyond the reusable workflow's `setup-command` hook. A composite cannot impose job-level environment, permissions, concurrency, or checkout policy. Supply them explicitly:
 
 ```yaml
 name: Release
@@ -205,7 +205,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Release Crate
-        uses: dblock/rust-crate-release@v0.1.0
+        uses: dblock/rust-crate-release@v0.1.1
 ```
 
 Insert your additional setup before the final step. The action accepts `root` (default `.`), `config`, and `version`; outputs are `name`, `version`, `archive`, `checksum`, and JSON `verification`. Keep the selected Cargo package inside its Git root and do not leave untracked tooling inside the checkout.
