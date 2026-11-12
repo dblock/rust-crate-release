@@ -1,8 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
   <title id="title">Rust Crate Release</title>
   <desc id="description">An open orange Cargo crate releasing a teal upward arrow.</desc>
-  <rect x="24" y="24" width="464" height="464" rx="104" fill="#fff7ed"/>
-  <ellipse cx="256" cy="423" rx="132" ry="22" fill="#243746" opacity=".1"/>
   <g stroke="#243746" stroke-width="12" stroke-linejoin="round" stroke-linecap="round">
     <path d="M136 254 256 184 376 254 256 324Z" fill="#243746"/>
     <path d="M136 254 256 324V426L136 356Z" fill="#df8950"/>
@@ -10,6 +8,6 @@
     <path d="m136 254 120-70-54-32-120 70Z" fill="#efb178"/>
     <path d="m376 254-120-70 54-32 120 70Z" fill="#f7ca93"/>
     <path d="M196 289v102m120-102v102" fill="none" stroke-width="8" opacity=".5"/>
-    <path d="m256 82-62 66h34v98h56v-98h34Z" fill="#25868b"/>
+    <path d="m256 70-62 78h34v98h56v-98h34Z" fill="#25868b"/>
   </g>
 </svg>
