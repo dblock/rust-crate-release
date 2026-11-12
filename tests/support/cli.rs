@@ -43,6 +43,24 @@ fn commit(root: &Path) -> Result {
 
 /// Shared by the source executable and the binary installed from the actual archive.
 pub fn check(binary: &Path) -> Result {
+    #[cfg(unix)]
+    {
+        let fixture = GitProject::cargo_library()?;
+        for status in ["success", "failure"] {
+            let output = process(binary, fixture.root()).args(["actions", "notify"])
+                .env("RCR_STATUS", status)
+                .env("RCR_STEPS", r#"{"test":{"outcome":"failure","conclusion":"success","outputs":{"secret":"must-not-appear"}}}"#)
+                .env(if status == "success" { "RCR_SUCCESS_COMMAND" } else { "RCR_FAILURE_COMMAND" },
+                    r#"["sh","-c","printf '%s' \"$RCR_EXECUTION_CONTEXT\" > .git/callback.json"]"#)
+                .output()?;
+            success(output)?;
+            let context: Value =
+                serde_json::from_slice(&fs::read(fixture.root().join(".git/callback.json"))?)?;
+            assert_eq!(context["run"]["external_steps"][0]["outcome"], "failure");
+            assert_eq!(context["run"]["external_steps"][0]["conclusion"], "success");
+            assert!(!context.to_string().contains("must-not-appear"));
+        }
+    }
     for override_mode in ["unset", "empty", "provided"] {
         let (released, next) = if override_mode == "provided" {
             ("0.2.0", "0.2.1")

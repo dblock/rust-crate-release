@@ -17,6 +17,12 @@ inputs:
   runner:
     description: Optional trusted project runner as JSON argv
     default: ''
+  success-command:
+    description: Optional terminal success callback as JSON argv
+    default: ''
+  failure-command:
+    description: Optional terminal failure callback as JSON argv
+    default: ''
 outputs:
   name:
     description: Released crate name
@@ -102,4 +108,28 @@ runs:
           ${{ steps.paths.outputs.directory }}/*.bundle
           ${{ steps.paths.outputs.directory }}/release.json
           ${{ steps.paths.outputs.directory }}/execution.json
+    - name: Notify Release Result
+      if: always()
+      shell: bash
+      env:
+        RCR_ROOT: ${{ inputs.root }}
+        RCR_CONFIG: ${{ inputs.config }}
+        RCR_STATUS: ${{ job.status }}
+        RCR_STEPS: ${{ toJSON(steps) }}
+        RCR_SUCCESS_COMMAND: ${{ inputs.success-command }}
+        RCR_FAILURE_COMMAND: ${{ inputs.failure-command }}
+      run: |
+        tool="$RUNNER_TEMP/rcr-tool/bin/rcr"
+        if [[ -x "$tool" ]]; then
+          "$tool" --root "$RCR_ROOT" actions notify
+        elif [[ "$RCR_STATUS" != success && -n "$RCR_FAILURE_COMMAND" ]]; then
+          argv_file="$RUNNER_TEMP/rcr-failure-argv"
+          printf '%s' "$RCR_FAILURE_COMMAND" | jq -je 'if type == "array" and length > 0 and all(.[]; type == "string") and .[0] != "" then .[] | ., "\u0000" else error("failure callback must be JSON argv") end' > "$argv_file"
+          mapfile -d '' -t argv < "$argv_file"
+          rm -- "$argv_file"
+          RCR_EXECUTION_CONTEXT="$(jq -cn --argjson steps "$RCR_STEPS" '{current_step:null,history:[],workflow:[],run:{platform:"github",run_id:env.GITHUB_RUN_ID,repository:env.GITHUB_REPOSITORY,attempt:env.GITHUB_RUN_ATTEMPT,reference:env.GITHUB_REF,sha:env.GITHUB_SHA,job:env.GITHUB_JOB,workflow_name:env.GITHUB_WORKFLOW,event:env.GITHUB_EVENT_NAME,external_steps:($steps|to_entries|map({id:.key,outcome:.value.outcome,conclusion:.value.conclusion}))}}')"
+          export RCR_EXECUTION_CONTEXT
+          cd "$RCR_ROOT"
+          "${argv[@]}"
+        fi
           ${{ steps.paths.outputs.directory }}/source-inputs.json

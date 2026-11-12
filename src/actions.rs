@@ -23,6 +23,8 @@ const JSON_LIMIT: u64 = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Subcommand)]
 pub enum ActionCommand {
+    /// Run a terminal callback using actual external step outcomes.
+    Notify,
     /// Validate the caller and locate retained files.
     Guard,
     /// Prepare without publication and expose exact upload paths.
@@ -74,6 +76,9 @@ pub(crate) fn run(
     mode: ActionCommand,
     configure: &dyn Fn(&mut crate::engine::ReleaseWorkflow) -> Result,
 ) -> Result<Value> {
+    if matches!(mode, ActionCommand::Notify) {
+        return notify(cli);
+    }
     guard(&|key| std::env::var(key).ok())?;
     let root = dunce::canonicalize(&cli.root)?;
     let git = Git::new(&root, environment("RCR_DEFAULT_BRANCH")?, "origin")?;
@@ -140,6 +145,44 @@ pub(crate) fn run(
         &serde_json::to_string(&completed["verification"])?,
     )?;
     Ok(completed)
+}
+
+fn notify(cli: &Cli) -> Result<Value> {
+    use crate::execution::{
+        CommandCallbacks, ExecutionContext, execution_provider, external_steps,
+    };
+    let root = dunce::canonicalize(&cli.root)?;
+    let path = cli.config.clone().or_else(|| {
+        std::env::var_os("RCR_CONFIG")
+            .filter(|value| !value.is_empty())
+            .map(Into::into)
+    });
+    let config = crate::cli::Configuration::load(&root, path.as_deref())?;
+    let command = |key: &str, fallback| -> Result<Option<Vec<String>>> {
+        std::env::var(key)
+            .ok()
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                serde_json::from_str(&value)
+                    .map_err(|_| Error::invalid("callback input must be JSON argv"))
+            })
+            .transpose()
+            .map(|value| value.or(fallback))
+    };
+    let success = environment("RCR_STATUS")? == "success";
+    let mut run = execution_provider(&config.default_branch).metadata();
+    run.external_steps = external_steps(std::env::var("RCR_STEPS").ok().as_deref())?;
+    let execution = ExecutionContext {
+        run,
+        ..ExecutionContext::default()
+    };
+    CommandCallbacks {
+        root,
+        success: command("RCR_SUCCESS_COMMAND", config.success)?,
+        failure: command("RCR_FAILURE_COMMAND", config.failure)?,
+    }
+    .notify(success, &execution)?;
+    Ok(json!({"operation":"actions-notify","success":success}))
 }
 
 /// Verifies an immutable upload from this run/attempt through GitHub's public REST API.

@@ -22,6 +22,16 @@ on:
         required: false
         default: ''
         type: string
+      success-command:
+        description: Optional terminal success callback as JSON argv
+        required: false
+        default: ''
+        type: string
+      failure-command:
+        description: Optional terminal failure callback as JSON argv
+        required: false
+        default: ''
+        type: string
     outputs:
       version:
         description: Released crate version
@@ -74,3 +84,5 @@ jobs:
           config: ${{ inputs.config }}
           version: ${{ inputs.version }}
           runner: ${{ inputs.runner }}
+          success-command: ${{ inputs.success-command }}
+          failure-command: ${{ inputs.failure-command }}

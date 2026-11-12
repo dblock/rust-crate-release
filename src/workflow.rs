@@ -15,6 +15,9 @@ pub trait Step<Input>: Send + Sync {
 }
 
 pub trait WorkflowObserver: Send + Sync {
+    fn success(&self, _execution: &ExecutionContext) -> Result {
+        Ok(())
+    }
     fn before(&self, _execution: &ExecutionContext) -> Result {
         Ok(())
     }
@@ -147,7 +150,12 @@ impl<I: 'static, O: 'static> Workflow<I, O> {
             },
             observers: options.observers,
         };
-        let result = (self.runner)(input, &mut invocation);
+        let result = (self.runner)(input, &mut invocation).and_then(|output| {
+            for observer in &invocation.observers {
+                observer.success(&invocation.execution)?;
+            }
+            Ok(output)
+        });
         if let Err(error) = &result {
             for observer in &invocation.observers {
                 if let Err(report_error) = observer.failure(&invocation.execution, error) {
@@ -193,6 +201,41 @@ mod tests {
         fn run(&self, _: usize, _: &ExecutionContext) -> Result<usize> {
             Err(Error::invalid("original"))
         }
+    }
+
+    #[test]
+    fn terminal_success_runs_once_and_callback_failures_keep_the_original_error() -> Result {
+        struct Terminal(Arc<Mutex<Vec<&'static str>>>);
+        impl WorkflowObserver for Terminal {
+            fn success(&self, _: &ExecutionContext) -> Result {
+                self.0.lock().unwrap().push("success");
+                Err(Error::invalid("terminal success failed"))
+            }
+            fn failure(&self, _: &ExecutionContext, _: &Error) -> Result {
+                self.0.lock().unwrap().push("failure");
+                Err(Error::invalid("secondary reporting failure"))
+            }
+        }
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let options = || RunOptions {
+            observers: vec![Arc::new(Terminal(events.clone()))],
+            ..RunOptions::default()
+        };
+        let error = Workflow::start()
+            .then(Length)?
+            .then(Double)?
+            .run_with("value".to_owned(), options())
+            .unwrap_err();
+        assert_eq!(error.to_string(), "terminal success failed");
+        assert_eq!(*events.lock().unwrap(), ["success", "failure"]);
+        events.lock().unwrap().clear();
+        let error = Workflow::start()
+            .then(Fail)?
+            .run_with(1, options())
+            .unwrap_err();
+        assert_eq!(error.to_string(), "original");
+        assert_eq!(*events.lock().unwrap(), ["failure"]);
+        Ok(())
     }
     #[derive(Default)]
     struct Observer {

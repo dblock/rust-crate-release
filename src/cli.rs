@@ -108,6 +108,8 @@ pub enum ChangelogFormat {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Configuration {
+    pub success: Option<Vec<String>>,
+    pub failure: Option<Vec<String>>,
     pub runner: Option<Vec<String>>,
     pub workflow: Mode,
     pub manifest: PathBuf,
@@ -129,6 +131,8 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
+            success: None,
+            failure: None,
             runner: None,
             workflow: Mode::Numeric,
             manifest: "Cargo.toml".into(),
@@ -177,6 +181,11 @@ impl Configuration {
             .is_some_and(|argv| argv.first().is_none_or(String::is_empty))
         {
             return Err(Error::invalid("runner requires nonempty program argv"));
+        }
+        for argv in [&config.success, &config.failure].into_iter().flatten() {
+            if argv.first().is_none_or(String::is_empty) {
+                return Err(Error::invalid("callbacks require nonempty program argv"));
+            }
         }
         match (config.workflow, config.changelog_format) {
             (Mode::Numeric, Some(ChangelogFormat::Generated))
@@ -346,6 +355,14 @@ fn archive_option(root: &Path, explicit: Option<PathBuf>) -> Option<PathBuf> {
 
 /// Runs a built-in command. Successful output is one JSON value; progress uses stderr.
 pub fn run(cli: Cli) -> Result<Value> {
+    if matches!(
+        cli.command,
+        Command::Actions {
+            command: crate::actions::ActionCommand::Notify
+        }
+    ) {
+        return run_with(cli, &|_| Ok(()));
+    }
     let root = dunce::canonicalize(&cli.root)?;
     let config_path = cli.config.clone().or_else(|| {
         std::env::var_os("RCR_CONFIG")
@@ -415,6 +432,7 @@ fn forward_arguments(cli: &Cli, root: &Path) -> Vec<std::ffi::OsString> {
                 crate::actions::ActionCommand::Guard => "guard",
                 crate::actions::ActionCommand::Prepare => "prepare",
                 crate::actions::ActionCommand::Release => "release",
+                crate::actions::ActionCommand::Notify => "notify",
             }
             .into(),
         ]),
@@ -559,6 +577,15 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }
     configure(&mut workflow)?;
+    if operation == "release" && std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
+        workflow
+            .observers
+            .push(Arc::new(crate::execution::CommandCallbacks {
+                root: root.clone(),
+                success: config.success,
+                failure: config.failure,
+            }));
+    }
     if let Some(path) = args.save_inputs {
         workflow.hooks.analyze = workflow.hooks.analyze.with(SaveInputs(root.join(path)));
     }
