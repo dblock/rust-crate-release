@@ -34,4 +34,6 @@ Inspect status, branches, and worktrees; preserve unrelated changes. Use `<usern
 
 Repository settings allow squash/rebase but not merge commits; use squash merges for @dblock. No merge, publication, tags/releases, credential setup, trusted publishing, or release-protection changes without explicit authorization. No release-automation direct-push exception is configured. [RELEASING.md](RELEASING.md) is provisional and does not authorize release actions.
 
+The root `rcr.toml` is repository maintenance configuration: retain Intridea parsing and all workspace/lint/package/Node validation commands. It does not activate self-release, configure credentials, or relax protections.
+
 Include the Copilot co-author trailer in AI-assisted commits and disclose AI authorship on behalf of @dblock in PRs/comments. Use PR closing references rather than manually closing issues. After merge, fetch/prune, verify GitHub's merged state, inspect clean checkouts/dependents, switch to updated `master`, and remove clean task-owned worktrees/merged branches. Force-delete a local branch only after verifying squash/rebase merge and no dependent/unmerged work loss; never remove dirty worktrees, active PRs, or `master`.

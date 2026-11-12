@@ -8,4 +8,5 @@
 - [#6](https://github.com/dblock/rust-crate-release/pull/6): Add the rcr CLI, trusted configuration, explicit source-input transport, read-only verification, and shared source/installed executable release fixtures - [@dblock](https://github.com/dblock).
 - [#7](https://github.com/dblock/rust-crate-release/pull/7): Add reusable/composite GitHub Actions, awaited durable archive preservation before publication, hidden diagnostics, and machine-output-safe credential masking - [@dblock](https://github.com/dblock).
 - [#8](https://github.com/dblock/rust-crate-release/pull/8): Add an original open-crate release logo, editable and raster assets, and rendering/packaging guidance - [@dblock](https://github.com/dblock).
+- [#9](https://github.com/dblock/rust-crate-release/pull/9): Configure repository release preparation for its Intridea changelog and full workspace, distribution, and artifact-support validation - [@dblock](https://github.com/dblock).
 - Your contribution here.
