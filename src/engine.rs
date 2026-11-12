@@ -390,11 +390,15 @@ pub struct ReleaseHooks {
     pub validate: LifecycleHooks<Prepared, Validated>,
     pub commit: LifecycleHooks<Validated, Committed>,
     pub build: LifecycleHooks<Committed, Packaged>,
+    pub tag: LifecycleHooks<Committed, Committed>,
     pub preserve: LifecycleHooks<Packaged, Preserved>,
     pub publish: LifecycleHooks<Preserved, Published>,
+    pub authenticate: LifecycleHooks<Preserved, Preserved>,
     pub push: LifecycleHooks<Published, Pushed>,
     pub host: LifecycleHooks<Pushed, Hosted>,
     pub next: LifecycleHooks<Hosted, NextEdited>,
+    pub commit_next: LifecycleHooks<NextEdited, Development>,
+    pub push_next: LifecycleHooks<Development, Development>,
     pub verify: LifecycleHooks<Development, Completed>,
 }
 
@@ -473,7 +477,10 @@ impl ReleaseWorkflow {
                     .clone()
                     .wrap(CommitStep(components.clone())),
             )?
-            .then(self.hooks.build.clone().wrap(BuildStep(components)))
+            .then(self.hooks.build.clone().wrap(BuildStep {
+                components,
+                tag_hooks: self.hooks.tag.clone(),
+            }))
     }
 
     pub fn release_workflow(&self) -> Result<Workflow<ReleaseRequest, Completed>> {
@@ -485,17 +492,17 @@ impl ReleaseWorkflow {
                     .clone()
                     .wrap(PreserveStep(components.clone())),
             )?
-            .then(
-                self.hooks
-                    .publish
-                    .clone()
-                    .wrap(PublishStep(components.clone())),
-            )?
+            .then(self.hooks.publish.clone().wrap(PublishStep {
+                components: components.clone(),
+                authentication_hooks: self.hooks.authenticate.clone(),
+            }))?
             .then(self.hooks.push.clone().wrap(PushStep(components.clone())))?
             .then(self.hooks.host.clone().wrap(HostStep(components.clone())))?
             .then(NextStep {
                 components: components.clone(),
                 hooks: self.hooks.next.clone(),
+                commit_hooks: self.hooks.commit_next.clone(),
+                push_hooks: self.hooks.push_next.clone(),
             })?
             .then(self.hooks.verify.clone().wrap(VerifyStep(components)))
     }
@@ -1045,16 +1052,19 @@ impl Step<Validated> for CommitStep {
 }
 
 #[derive(Clone)]
-pub struct BuildStep(pub Arc<ReleaseComponents>);
+pub struct BuildStep {
+    pub components: Arc<ReleaseComponents>,
+    pub tag_hooks: LifecycleHooks<Committed, Committed>,
+}
 
 impl Step<Committed> for BuildStep {
     type Output = Packaged;
     fn id(&self) -> &str {
         "build"
     }
-    fn run(&self, input: Committed, _: &ExecutionContext) -> Result<Packaged> {
+    fn run(&self, input: Committed, execution: &ExecutionContext) -> Result<Packaged> {
         let mut data = input.0;
-        let components = &self.0;
+        let components = &self.components;
         components.repository.assert_clean()?;
         let directory = components.store.directory();
         let path = directory.join(format!(
@@ -1100,9 +1110,20 @@ impl Step<Committed> for BuildStep {
         }
         components.package.verify_consumer(&artifact)?;
         components.repository.assert_clean()?;
+        data.artifact = Some(artifact);
+        let state = Committed(data);
+        let head = components.repository.inspect()?.head;
+        self.tag_hooks.before(&state, execution, "tag")?;
+        components.repository.assert_clean()?;
+        let data = &state.0;
         components
             .repository
             .ensure_tag(data.release.tag(), data.release_commit()?)?;
+        self.tag_hooks.after(&state, execution, "tag")?;
+        components.repository.assert_clean()?;
+        if components.repository.inspect()?.head != head {
+            return Err(Error::invalid("tag hooks must not move HEAD"));
+        }
         components.repository.preserve_bundle(
             &directory.join(format!(
                 "{}-{}.bundle",
@@ -1112,9 +1133,8 @@ impl Step<Committed> for BuildStep {
             data.release.tag(),
             data.release_commit()?,
         )?;
-        data.artifact = Some(artifact);
         data.persist(components, Phase::Build)?;
-        Ok(Packaged(data))
+        Ok(Packaged(state.0))
     }
 }
 
@@ -1165,14 +1185,20 @@ operation!(
     }
 );
 
-operation!(
-    PublishStep,
-    Preserved,
-    Published,
-    "publish",
-    Publish,
-    [],
-    |components, data, _execution| {
+#[derive(Clone)]
+pub struct PublishStep {
+    pub components: Arc<ReleaseComponents>,
+    pub authentication_hooks: LifecycleHooks<Preserved, Preserved>,
+}
+
+impl Step<Preserved> for PublishStep {
+    type Output = Published;
+    fn id(&self) -> &str {
+        "publish"
+    }
+    fn run(&self, input: Preserved, execution: &ExecutionContext) -> Result<Published> {
+        let components = &self.components;
+        let data = &input.0;
         assert_artifact(&data.release, data.archive()?)?;
         components.repository.assert_clean()?;
         if components
@@ -1197,11 +1223,40 @@ operation!(
                 "remote changed concurrently before publication",
             ));
         }
-        components
-            .publisher
-            .publish(data.archive()?, components.execution.as_ref())?;
+        let head = components.repository.inspect()?.head;
+        let check_authentication = || {
+            components.repository.assert_clean()?;
+            if components.repository.inspect()?.head != head
+                || components
+                    .repository
+                    .local_tag(data.release.tag())?
+                    .as_deref()
+                    != Some(data.release_commit()?)
+            {
+                return Err(Error::invalid(
+                    "authentication hooks must not change release refs",
+                ));
+            }
+            Ok(())
+        };
+        components.publisher.publish_with_authentication(
+            data.archive()?,
+            components.execution.as_ref(),
+            &|| {
+                self.authentication_hooks
+                    .before(&input, execution, "authenticate")?;
+                check_authentication()
+            },
+            &|| {
+                self.authentication_hooks
+                    .after(&input, execution, "authenticate")?;
+                check_authentication()
+            },
+        )?;
+        data.persist(components, Phase::Publish)?;
+        Ok(Published(input.0))
     }
-);
+}
 
 operation!(
     PushStep,
@@ -1279,6 +1334,8 @@ impl Step<Hosted> for EditNextStep {
 pub struct NextStep {
     pub components: Arc<ReleaseComponents>,
     pub hooks: LifecycleHooks<Hosted, NextEdited>,
+    pub commit_hooks: LifecycleHooks<NextEdited, Development>,
+    pub push_hooks: LifecycleHooks<Development, Development>,
 }
 
 impl Step<Hosted> for NextStep {
@@ -1341,14 +1398,27 @@ impl Step<Hosted> for NextStep {
                 execution,
             )?;
             components.repository.assert_prepared(&tree)?;
-            let commit = components
-                .repository
-                .commit(&tree, &format!("Prepare {} development", next))?;
+            let message = format!("Prepare {} development", next);
+            let state = NextEdited(data);
+            self.commit_hooks.before(&state, execution, "commit_next")?;
+            components.repository.assert_prepared(&tree)?;
+            let commit = components.repository.commit(&tree, &message)?;
+            data = state.0;
             data.development_commit = Some(commit.clone());
             data.persist(components, Phase::Next)?;
+            let state = Development(data);
+            self.commit_hooks.after(&state, execution, "commit_next")?;
+            self.push_hooks.before(&state, execution, "push_next")?;
+            components.repository.assert_clean()?;
+            if components.repository.inspect()?.head != commit {
+                return Err(Error::invalid("development hooks must not move HEAD"));
+            }
             components
                 .repository
-                .push_development(&commit, data.release_commit()?)?;
+                .push_development(&commit, state.0.release_commit()?)?;
+            self.push_hooks.after(&state, execution, "push_next")?;
+            components.repository.assert_clean()?;
+            data = state.0;
         } else {
             components.repository.assert_clean()?;
         }
