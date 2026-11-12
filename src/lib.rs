@@ -1,12 +1,19 @@
 #![doc = include_str!("../README.md")]
 
 pub mod changelog;
+pub mod command;
 mod error;
 pub mod execution;
+pub mod git;
 pub mod hooks;
+pub mod hosting;
 pub mod markdown;
+pub mod package;
+pub mod registry;
 mod release;
 pub mod semantic;
+pub mod store;
+pub mod testing;
 pub mod workflow;
 pub use error::{Error, Result};
 pub use release::Release;

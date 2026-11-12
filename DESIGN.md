@@ -2,9 +2,9 @@
 
 ## Scope and Status
 
-Port [ruby-gem-release](https://github.com/dblock/ruby-gem-release/blob/master/DESIGN.md) and [npm-package-release](https://github.com/dblock/npm-package-release/blob/master/DESIGN.md) to Rust and Cargo. The first implementation must cover their full existing feature set, not just numeric version bumps. Typed workflow/hook/execution building blocks, Markdown/changelogs, and semantic analysis are implemented; the release engine, CLI, and publication providers follow in dependent PRs. No release command or publication behavior exists yet.
+Port [ruby-gem-release](https://github.com/dblock/ruby-gem-release/blob/master/DESIGN.md) and [npm-package-release](https://github.com/dblock/npm-package-release/blob/master/DESIGN.md) to Rust and Cargo. The first implementation must cover their full existing feature set, not just numeric version bumps. Typed workflow/hook/execution building blocks, Markdown/changelogs, semantic analysis, Cargo/registry/Git/hosting providers, durable diagnostics, and isolated testing helpers are implemented. The integrated release engine, CLI, and Actions follow in dependent PRs; no release command exists yet.
 
-Use repository/crate `rust-crate-release`, Rust import `rust_crate_release`, CLI `rcr`, and trusted built-in configuration `rcr.toml`. Package version starts at `0.1.0`. Rust 2024 and Rust 1.99.1 are the initial supported floor and development toolchain, verified against the stable distribution manifest. Runtime dependencies use public pulldown-cmark, SemVer, serde/JSON, and thiserror APIs; verify current stable releases against this floor rather than copying the reference ecosystems.
+Use repository/crate `rust-crate-release`, Rust import `rust_crate_release`, CLI `rcr`, and trusted built-in configuration `rcr.toml`. Package version starts at `0.1.0`. Rust 2024 and Rust 1.99.1 are the initial supported floor and development toolchain, verified against the stable distribution manifest. Runtime dependencies use public Markdown, SemVer, serde/JSON, error, TOML, archive, temporary-directory, SHA-256, HTTP/TLS, and glob APIs; verify current stable releases against this floor rather than copying the reference ecosystems.
 
 ## Public Interfaces and Layout
 

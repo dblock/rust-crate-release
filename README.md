@@ -16,11 +16,11 @@ cargo test --locked --workspace
 
 ## Usage
 
-Start with [Typed Workflows](docs/workflows.md) to compose Rust steps and hooks. Changelog editing and semantic analysis are library building blocks; the release engine, `rcr` executable, `rcr.toml`, and publishing Actions are not implemented yet. See [Design](DESIGN.md) for the full port scope.
+Start with [Typed Workflows](docs/workflows.md) to compose Rust steps and hooks. [Cargo Providers](docs/cargo.md) build and publish retained archives; [Release Providers](docs/providers.md) cover Git and isolated testing. The integrated release engine, `rcr` executable, `rcr.toml`, and publishing Actions are not implemented yet. See [Design](DESIGN.md) for the full port scope.
 
 ## Contributing
 
-Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), and [Semantic Releases](docs/semantic.md).
+Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), [Semantic Releases](docs/semantic.md), [Cargo Providers](docs/cargo.md), [Release Providers](docs/providers.md), [GitHub Hosting](docs/hosting.md), and [Diagnostics and Recovery](docs/recovery.md).
 
 ## License
 
