@@ -1,0 +1,7 @@
+[files]
+extend-exclude = ["Cargo.lock"]
+ignore-hidden = false
+
+[default.extend-words]
+rcr = "rcr"
+flate = "flate"

@@ -1,0 +1,62 @@
+name: Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Rust ${{ matrix.entry.rust }} on ${{ matrix.entry.os }}
+    runs-on: ${{ matrix.entry.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        entry:
+          - { rust: '1.99.1', os: ubuntu-latest }
+          - { rust: stable, os: macos-latest }
+          - { rust: stable, os: windows-latest }
+    steps:
+      - name: Check Out Source
+        uses: actions/checkout@v7.0.1
+      - name: Set Up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ matrix.entry.rust }}
+      - name: Cache Rust Dependencies
+        uses: Swatinem/rust-cache@v2.9.3
+      - name: Run Tests
+        run: cargo test --locked --workspace
+        env:
+          RUSTUP_TOOLCHAIN: ${{ matrix.entry.rust }}
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Out Source
+        uses: actions/checkout@v7.0.1
+      - name: Set Up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.99.1'
+          components: llvm-tools-preview
+      - name: Cache Rust Dependencies
+        uses: Swatinem/rust-cache@v2.9.3
+      - name: Install Coverage Tool
+        run: cargo install --locked cargo-llvm-cov --version 0.9.1
+      - name: Measure Coverage
+        run: cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info
+      - name: Upload Coverage Artifact
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: coverage
+          path: target/lcov.info
+      - name: Submit to Coveralls
+        uses: coverallsapp/github-action@v2.3.8
+        with:
+          file: target/lcov.info
+          format: lcov
