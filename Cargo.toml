@@ -6,7 +6,6 @@ rust-version = "1.99.1"
 description = "Composable release workflows for Rust crates"
 license = "MIT"
 repository = "https://github.com/dblock/rust-crate-release"
-homepage = "https://github.com/dblock/rust-crate-release"
 documentation = "https://docs.rs/rust-crate-release"
 readme = "README.md"
 keywords = ["cargo", "release", "workflow", "changelog", "github-actions"]

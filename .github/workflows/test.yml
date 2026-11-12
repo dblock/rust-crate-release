@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Rust ${{ matrix.entry.rust }} on ${{ matrix.entry.os }}
@@ -19,6 +23,8 @@ jobs:
           - { rust: '1.99.1', os: ubuntu-latest }
           - { rust: stable, os: macos-latest }
           - { rust: stable, os: windows-latest }
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.entry.rust }}
     steps:
       - name: Check Out Source
         uses: actions/checkout@v7.0.1
@@ -26,12 +32,11 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: ${{ matrix.entry.rust }}
+          components: rustfmt, clippy
       - name: Cache Rust Dependencies
         uses: Swatinem/rust-cache@v2.9.3
       - name: Run Tests
         run: cargo test --locked --workspace
-        env:
-          RUSTUP_TOOLCHAIN: ${{ matrix.entry.rust }}
 
   coverage:
     name: Coverage
@@ -43,7 +48,7 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: '1.99.1'
-          components: llvm-tools-preview
+          components: rustfmt, clippy, llvm-tools-preview
       - name: Cache Rust Dependencies
         uses: Swatinem/rust-cache@v2.9.3
       - name: Install Coverage Tool

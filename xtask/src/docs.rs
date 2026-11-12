@@ -192,6 +192,42 @@ mod tests {
     }
 
     #[test]
+    fn ci_installs_components_for_nested_release_validation() -> Result {
+        for source in [
+            include_str!("../../.github/workflows/test.yml"),
+            include_str!("../../.github/workflows/lint.yml"),
+            include_str!("../../.github/workflows/package.yml"),
+        ] {
+            let workflow = YamlLoader::load_from_str(source)?;
+            for (id, job) in workflow[0]["jobs"].as_hash().unwrap() {
+                let setup = job["steps"]
+                    .as_vec()
+                    .unwrap()
+                    .iter()
+                    .find(|step| step["name"].as_str() == Some("Set Up Rust"))
+                    .unwrap();
+                let components: Vec<_> = setup["with"]["components"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .collect();
+                for component in ["rustfmt", "clippy"] {
+                    assert!(
+                        components.contains(&component),
+                        "{} needs {component} for fixture release validation",
+                        id.as_str().unwrap()
+                    );
+                }
+                if id.as_str() == Some("coverage") {
+                    assert!(components.contains(&"llvm-tools-preview"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn release_caches_both_cargo_workspaces_before_installation() {
         let action = YamlLoader::load_from_str(include_str!("../../action.yml")).unwrap();
         let steps = action[0]["runs"]["steps"].as_vec().unwrap();
@@ -215,6 +251,55 @@ mod tests {
                 "${{ inputs.root }} -> target",
             ]
         );
+    }
+
+    #[test]
+    fn superseded_validation_cancels_without_cancelling_releases() -> Result {
+        for source in [
+            include_str!("../../.github/workflows/test.yml"),
+            include_str!("../../.github/workflows/lint.yml"),
+            include_str!("../../.github/workflows/package.yml"),
+        ] {
+            let workflow = YamlLoader::load_from_str(source)?;
+            assert_eq!(
+                workflow[0]["concurrency"]["group"].as_str(),
+                Some("${{ github.workflow }}-${{ github.ref }}")
+            );
+            assert_eq!(
+                workflow[0]["concurrency"]["cancel-in-progress"].as_bool(),
+                Some(true)
+            );
+        }
+        let release =
+            YamlLoader::load_from_str(include_str!("../../.github/workflows/release.yml"))?;
+        assert_eq!(
+            release[0]["concurrency"]["cancel-in-progress"].as_bool(),
+            Some(false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn matrix_toolchain_applies_to_cache_and_child_cargo_commands() -> Result {
+        let workflow = YamlLoader::load_from_str(include_str!("../../.github/workflows/test.yml"))?;
+        let job = &workflow[0]["jobs"]["test"];
+        assert_eq!(
+            job["env"]["RUSTUP_TOOLCHAIN"].as_str(),
+            Some("${{ matrix.entry.rust }}")
+        );
+        let steps = job["steps"].as_vec().unwrap();
+        let setup = steps
+            .iter()
+            .find(|step| step["name"].as_str() == Some("Set Up Rust"))
+            .unwrap();
+        assert_eq!(setup["with"]["toolchain"], job["env"]["RUSTUP_TOOLCHAIN"]);
+        for step in steps {
+            assert!(
+                step["env"]["RUSTUP_TOOLCHAIN"].is_badvalue(),
+                "step overrides must not select another toolchain"
+            );
+        }
+        Ok(())
     }
 
     #[test]
