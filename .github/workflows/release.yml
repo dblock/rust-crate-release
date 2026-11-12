@@ -3,6 +3,46 @@ name: Release
 on:
   workflow_call:
     inputs:
+      toolchain:
+        description: Rust toolchain for tool and project, at least 1.99.1
+        required: false
+        default: '1.99.1'
+        type: string
+      git-user-name:
+        description: Release commit author name
+        required: false
+        default: 'github-actions[bot]'
+        type: string
+      git-user-email:
+        description: Release commit author email
+        required: false
+        default: '41898282+github-actions[bot]@users.noreply.github.com'
+        type: string
+      validate-command:
+        description: Optional replacement validation command as JSON argv
+        required: false
+        default: ''
+        type: string
+      prepare-command:
+        description: Optional trusted preparation edit command as JSON argv
+        required: false
+        default: ''
+        type: string
+      test-command:
+        description: Optional additional source/development test command as JSON argv
+        required: false
+        default: ''
+        type: string
+      publish-command:
+        description: Optional exact-archive publisher as JSON argv
+        required: false
+        default: ''
+        type: string
+      bump-command:
+        description: Optional trusted development edit command as JSON argv
+        required: false
+        default: ''
+        type: string
       tool-ref:
         description: Reviewed rust-crate-release ref matching the reusable workflow ref
         required: true
@@ -73,14 +113,23 @@ jobs:
           persist-credentials: false
       - name: Configure Release Identity
         working-directory: consumer
+        env:
+          RCR_GIT_USER_NAME: ${{ inputs.git-user-name }}
+          RCR_GIT_USER_EMAIL: ${{ inputs.git-user-email }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "$RCR_GIT_USER_NAME"
+          git config user.email "$RCR_GIT_USER_EMAIL"
       - name: Release
         id: release
         uses: ./tool
         with:
           root: consumer
+          toolchain: ${{ inputs.toolchain }}
+          validate-command: ${{ inputs.validate-command }}
+          prepare-command: ${{ inputs.prepare-command }}
+          test-command: ${{ inputs.test-command }}
+          publish-command: ${{ inputs.publish-command }}
+          bump-command: ${{ inputs.bump-command }}
           config: ${{ inputs.config }}
           version: ${{ inputs.version }}
           runner: ${{ inputs.runner }}

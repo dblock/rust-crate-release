@@ -4,8 +4,8 @@ use crate::changelog::{
     ChangelogTemplate, GeneratedChangelog, IntrideaChangelog, KeepAChangelog, NoChangelog,
 };
 use crate::engine::{
-    Analyzed, Captured, CapturedInputs, CommandValidator, NextVersion, RegistryVerifier,
-    ReleaseRequest, ReleaseWorkflow, SystemClock,
+    Analyzed, Captured, CapturedInputs, CommandValidator, Edited, Hosted, NextEdited, NextVersion,
+    RegistryVerifier, ReleaseRequest, ReleaseWorkflow, SystemClock,
 };
 use crate::execution::{ExecutionContext, execution_provider};
 use crate::git::{Git, GitHistory, ReleaseRepository};
@@ -108,6 +108,9 @@ pub enum ChangelogFormat {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Configuration {
+    pub prepare_command: Option<Vec<String>>,
+    pub publish_command: Option<Vec<String>>,
+    pub bump_command: Option<Vec<String>>,
     pub success: Option<Vec<String>>,
     pub failure: Option<Vec<String>>,
     pub runner: Option<Vec<String>>,
@@ -131,6 +134,9 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
+            prepare_command: None,
+            publish_command: None,
+            bump_command: None,
             success: None,
             failure: None,
             runner: None,
@@ -182,7 +188,16 @@ impl Configuration {
         {
             return Err(Error::invalid("runner requires nonempty program argv"));
         }
-        for argv in [&config.success, &config.failure].into_iter().flatten() {
+        for argv in [
+            &config.success,
+            &config.failure,
+            &config.prepare_command,
+            &config.publish_command,
+            &config.bump_command,
+        ]
+        .into_iter()
+        .flatten()
+        {
             if argv.first().is_none_or(String::is_empty) {
                 return Err(Error::invalid("callbacks require nonempty program argv"));
             }
@@ -217,7 +232,144 @@ impl Configuration {
         ChangelogTemplate::new(config.placeholder.clone(), config.sections.clone())?;
         Ok(config)
     }
+}
 
+fn phase_command(key: &str, fallback: Option<Vec<String>>) -> Result<Option<Vec<String>>> {
+    let command = std::env::var(key)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            serde_json::from_str::<Vec<String>>(&value)
+                .map_err(|_| Error::invalid(format!("{key} must be JSON argv")))
+        })
+        .transpose()?
+        .or(fallback);
+    if command
+        .as_ref()
+        .is_some_and(|argv| argv.first().is_none_or(String::is_empty))
+    {
+        return Err(Error::invalid(format!(
+            "{key} requires nonempty program argv"
+        )));
+    }
+    Ok(command)
+}
+
+fn execute_phase(root: &Path, argv: &[String], environment: &[(&str, &str)]) -> Result {
+    let args: Vec<_> = argv[1..].iter().map(String::as_str).collect();
+    let output = crate::command::run_with_env_and_remove(
+        root,
+        &argv[0],
+        &args,
+        environment,
+        &["CRATE_ARCHIVE"],
+    )?;
+    std::io::stderr().write_all(&output.stdout)?;
+    std::io::stderr().write_all(&output.stderr)?;
+    Ok(())
+}
+
+struct EditCommand {
+    root: PathBuf,
+    argv: Vec<String>,
+}
+
+impl LifecycleHook<Analyzed, Edited> for EditCommand {
+    fn id(&self) -> &str {
+        "prepare-command"
+    }
+    fn after(&self, output: &Edited, _: &ExecutionContext) -> Result {
+        execute_phase(
+            &self.root,
+            &self.argv,
+            &[(
+                "RCR_RELEASE_VERSION",
+                &output.release().version().to_string(),
+            )],
+        )
+    }
+}
+
+impl LifecycleHook<Hosted, NextEdited> for EditCommand {
+    fn id(&self) -> &str {
+        "bump-command"
+    }
+    fn after(&self, output: &NextEdited, _: &ExecutionContext) -> Result {
+        if let Some(next) = output.next_version() {
+            execute_phase(
+                &self.root,
+                &self.argv,
+                &[
+                    (
+                        "RCR_RELEASE_VERSION",
+                        &output.release().version().to_string(),
+                    ),
+                    ("RCR_NEXT_VERSION", &next.to_string()),
+                ],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+struct CommandPublisher {
+    root: PathBuf,
+    argv: Vec<String>,
+    inner: Arc<dyn PackagePublisher>,
+}
+
+impl PackagePublisher for CommandPublisher {
+    fn lookup(
+        &self,
+        name: &str,
+        version: &Version,
+    ) -> Result<Option<crate::registry::PublishedCrate>> {
+        self.inner.lookup(name, version)
+    }
+    fn download(&self, name: &str, version: &Version) -> Result<Vec<u8>> {
+        self.inner.download(name, version)
+    }
+    fn publish(
+        &self,
+        artifact: &Artifact,
+        _: &dyn crate::execution::ExecutionProvider,
+    ) -> Result<crate::registry::PublishOutcome> {
+        artifact.verify()?;
+        let existing = self.lookup(artifact.name(), artifact.version())?;
+        if existing.is_none() {
+            execute_phase(
+                &self.root,
+                &self.argv,
+                &[
+                    (
+                        "CRATE_ARCHIVE",
+                        artifact
+                            .path()
+                            .to_str()
+                            .ok_or_else(|| Error::invalid("archive path must be UTF-8"))?,
+                    ),
+                    ("RCR_RELEASE_VERSION", &artifact.version().to_string()),
+                ],
+            )?;
+        }
+        let published = self.lookup(artifact.name(), artifact.version())?
+                .ok_or_else(|| Error::invalid("publish command did not expose the released version; reconcile before retrying"))?;
+        if published.checksum != artifact.checksum()
+            || self.download(artifact.name(), artifact.version())? != artifact.validated_bytes()?
+        {
+            return Err(Error::invalid(
+                "publish command did not publish the exact retained archive",
+            ));
+        }
+        Ok(if existing.is_some() {
+            crate::registry::PublishOutcome::Reused
+        } else {
+            crate::registry::PublishOutcome::Published
+        })
+    }
+}
+
+impl Configuration {
     fn verifier(&self) -> Result<RegistryVerifier> {
         RegistryVerifier::new(
             self.verification_attempts,
@@ -562,7 +714,15 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
     workflow.components.changelog_path = config.changelog;
     workflow.components.clock = Arc::new(SystemClock::new(&config.timezone)?);
     workflow.components.validator = Arc::new(CommandValidator {
-        commands: config.validation,
+        commands: {
+            let mut commands = phase_command("RCR_VALIDATE_COMMAND", None)?
+                .map(|command| vec![command])
+                .unwrap_or(config.validation);
+            if let Some(command) = phase_command("RCR_TEST_COMMAND", None)? {
+                commands.push(command);
+            }
+            commands
+        },
     });
     workflow.components.next_version = Arc::new(next);
     workflow.components.verifier = Arc::new(verifier);
@@ -577,6 +737,25 @@ pub fn run_with(cli: Cli, configure: &dyn Fn(&mut ReleaseWorkflow) -> Result) ->
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }
     configure(&mut workflow)?;
+    if let Some(argv) = phase_command("RCR_PREPARE_COMMAND", config.prepare_command)? {
+        workflow.hooks.prepare = workflow.hooks.prepare.with(EditCommand {
+            root: root.clone(),
+            argv,
+        });
+    }
+    if let Some(argv) = phase_command("RCR_BUMP_COMMAND", config.bump_command)? {
+        workflow.hooks.next = workflow.hooks.next.with(EditCommand {
+            root: root.clone(),
+            argv,
+        });
+    }
+    if let Some(argv) = phase_command("RCR_PUBLISH_COMMAND", config.publish_command)? {
+        workflow.components.publisher = Arc::new(CommandPublisher {
+            root: root.clone(),
+            argv,
+            inner: workflow.components.publisher.clone(),
+        });
+    }
     if operation == "release" && std::env::var("GITHUB_ACTIONS").as_deref() != Ok("true") {
         workflow
             .observers
