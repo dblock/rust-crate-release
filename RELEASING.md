@@ -2,7 +2,7 @@
 
 ## Current Status
 
-This is an unpublished `0.1.0` library/CLI with typed numeric/semantic orchestration and replaceable Cargo, registry, Git, hosting, validation, and diagnostic providers. [CLI and Configuration](docs/cli.md) documents real commands. No Actions release workflow, credentials, trusted publisher, or GitHub release environment is configured; Actions support follows separately. These instructions do not authorize publication.
+This is an unpublished `0.1.0` library/CLI with typed numeric/semantic orchestration, reusable/composite Actions, and replaceable providers. [CLI and Configuration](docs/cli.md) documents real commands; [GitHub Actions](docs/actions.md) documents integration. The reusable workflow does not activate this repository's self-release: no credentials, trusted publisher, environment, protection exception, dispatch, or release tag is configured. These instructions do not authorize publication.
 
 ## Validate the Distribution
 
@@ -12,6 +12,7 @@ Run the local checks before committing or pushing release-related changes:
 cargo test --locked --workspace
 cargo xtask lint
 cargo xtask package
+npm --prefix actions test
 ```
 
 The final command builds `target/package/rust-crate-release-0.1.0.crate`, verifies Cargo can compile it, checks archive paths, extracts that actual archive, and runs an isolated dependent program. It never publishes. Inspect the packaged manifest, lockfile, README, license, and changelog before any separately authorized release.
@@ -26,9 +27,9 @@ Cargo does not accept a prebuilt `.crate` in `cargo publish`. The implemented pu
 
 After a confirmed first release, separately authorize/configure a trusted publisher for the exact owner/repository, caller workflow filename, and environment. Use the official [crates.io authentication action](https://github.com/rust-lang/crates-io-auth-action) or a verified provider implementation to obtain short-lived OIDC credentials. Read back saved settings; configuration alone does not prove a successful authenticated publication. This scaffold neither configures a publisher nor requests a token.
 
-## Future Automated Releases
+## Automated Release Integration
 
-Use manual dispatch, the default branch, a restricted `release` environment, explicit `contents: write`/`id-token: write`, concurrency control, and durable artifact upload before registry mutation. Define and test both reusable/composite interfaces against the same Rust engine. Do not copy the registry's tag-triggered quick-start example: release commit/tag creation belongs after archive publication in the agreed orchestration.
+Use the reviewed [reusable/composite integration](docs/actions.md) with manual dispatch, the default branch, a restricted `release` environment, explicit `contents: write`/`id-token: write`, non-canceling concurrency, and durable artifact upload before registry mutation. Pin reusable workflow and tooling refs together. Do not copy a tag-triggered quick-start: release commit/tag creation belongs after archive publication. SDK release refs in the documentation become usable only after their separately authorized tags exist.
 
 Any direct-push release metadata/next-version exception needs explicit setup authorization and verified protection changes. Retain active force-push/deletion protections with no bypass actors; document that removing a PR requirement would permit direct pushes by all writers, not just the release workflow. Ordinary development remains PR-based. No such exception is configured now.
 

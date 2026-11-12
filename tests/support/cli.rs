@@ -39,18 +39,23 @@ fn commit(root: &Path) -> Result {
 }
 
 /// Shared by the source executable and the binary installed from the actual archive.
-pub fn check(binary: &Path) -> Result {
+pub fn check(binary: &Path, support: &Path) -> Result {
     for override_mode in ["unset", "empty", "provided"] {
         let (released, next) = if override_mode == "provided" {
             ("0.2.0", "0.2.1")
         } else {
             ("0.1.0", "0.1.1")
         };
+        let storage = if override_mode == "provided" {
+            ".git/cli-rcr"
+        } else {
+            ".git/rcr"
+        };
         let fixture = GitProject::cargo_library()?;
         let root = fixture.root();
         fs::write(
             root.join("rcr.toml"),
-            "changelog-format = \"intridea\"\nverification-delay-seconds = 0\n",
+            "changelog-format = \"intridea\"\nverification-delay-seconds = 0\nartifact-directory = \".git/configured-rcr\"\n",
         )?;
         fs::write(
             root.join("src/lib.rs"),
@@ -59,6 +64,7 @@ pub fn check(binary: &Path) -> Result {
         commit(root)?;
         let registry = fixture.temporary_directory().join("registry");
         let mut prepare = process(binary, root);
+        prepare.args(["--artifact-directory", storage]);
         prepare.args(["prepare", "--save-inputs", ".git/rcr/source-inputs.json"]);
         if override_mode == "provided" {
             prepare.args(["--release-version", released]);
@@ -67,6 +73,7 @@ pub fn check(binary: &Path) -> Result {
         let archive = prepared["archive"]
             .as_str()
             .ok_or("missing archive output")?;
+        assert!(Path::new(archive).parent().unwrap().ends_with(storage));
         let bytes = fs::read(archive)?;
         assert_eq!(prepared["verification"]["status"], "pending");
         assert_eq!(prepared["operation"], "prepare");
@@ -74,6 +81,7 @@ pub fn check(binary: &Path) -> Result {
         let inputs = root.join(".git/rcr/source-inputs.json");
         let original_inputs = fs::read(&inputs)?;
         let mut release = process(binary, root);
+        release.args(["--artifact-directory", storage]);
         release.arg("--test-registry").arg(&registry).args([
             "release",
             "--inputs",
@@ -103,7 +111,8 @@ pub fn check(binary: &Path) -> Result {
         let git = Git::new(root, "master", "origin")?;
         git.assert_clean()?;
         let head = git.inspect()?.head;
-        let receipt = fs::read(root.join(".git/rcr/release.json"))?;
+        let receipt_path = root.join(storage).join("release.json");
+        let receipt = fs::read(&receipt_path)?;
         let verified = success(
             process(binary, root)
                 .arg("--test-registry")
@@ -121,7 +130,7 @@ pub fn check(binary: &Path) -> Result {
         )?;
         assert_eq!(verified["verification"]["status"], "verified");
         assert_eq!(git.inspect()?.head, head);
-        assert_eq!(fs::read(root.join(".git/rcr/release.json"))?, receipt);
+        assert_eq!(fs::read(&receipt_path)?, receipt);
         let wrong_identity = process(binary, root)
             .arg("--test-registry")
             .arg(&registry)
@@ -139,6 +148,7 @@ pub fn check(binary: &Path) -> Result {
         assert!(wrong_identity.stdout.is_empty());
         let retry = success(
             process(binary, root)
+                .args(["--artifact-directory", storage])
                 .arg("--test-registry")
                 .arg(&registry)
                 .args(["release", "--inputs", ".git/rcr/source-inputs.json"])
@@ -238,5 +248,131 @@ pub fn check(binary: &Path) -> Result {
     assert!(
         String::from_utf8_lossy(&wrong_attempt.stderr).contains("another GitHub run or attempt")
     );
+    let registry = fixture.temporary_directory().join("github-registry");
+    let helper = fixture.temporary_directory().join("uploader.mjs");
+    fs::write(
+        &helper,
+        "console.error('dummy uploader detail must not leak'); process.exit(1);\n",
+    )?;
+    let upload_failure = github_process("1")
+        .arg("--test-registry")
+        .arg(&registry)
+        .arg("--github-artifact-uploader")
+        .arg(&helper)
+        .args(["release", "--inputs", ".git/rcr/github-source-inputs.json"])
+        .output()?;
+    assert!(!upload_failure.status.success());
+    assert!(upload_failure.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&upload_failure.stderr)
+            .contains("durable GitHub artifact upload failed")
+    );
+    assert!(!String::from_utf8_lossy(&upload_failure.stderr).contains("dummy uploader detail"));
+    assert_eq!(fs::read_dir(&registry)?.count(), 0);
+    let marker = fixture.temporary_directory().join("preserved.json");
+    fs::write(
+        &helper,
+        format!(
+            "import fs from 'node:fs';\nconst args = process.argv.slice(2);\n\
+         if (fs.existsSync({registry}) || args.length !== 4 || !fs.existsSync(args[0] + '/' + args[1] + '-' + args[2] + '.bundle')) process.exit(2);\n\
+         fs.writeFileSync({marker}, JSON.stringify(args));\n",
+            registry = serde_json::to_string(&registry.join("release-fixture-0.1.0.crate"))?,
+            marker = serde_json::to_string(&marker)?,
+        ),
+    )?;
+    let completed = success(
+        github_process("1")
+            .arg("--test-registry")
+            .arg(&registry)
+            .arg("--github-artifact-uploader")
+            .arg(&helper)
+            .args(["release", "--inputs", ".git/rcr/github-source-inputs.json"])
+            .output()?,
+    )?;
+    assert_eq!(completed["verification"]["status"], "verified");
+    let preserved: Value = serde_json::from_slice(&fs::read(marker)?)?;
+    assert_eq!(preserved[1], "release-fixture");
+    assert_eq!(preserved[2], "0.1.0");
+    assert_eq!(preserved[3], completed["checksum"]);
+    check_action(binary, support)
+}
+
+fn check_action(binary: &Path, support: &Path) -> Result {
+    let fixture = GitProject::cargo_library()?;
+    fs::write(
+        fixture.root().join("rcr.toml"),
+        "changelog-format = \"intridea\"\nverification-delay-seconds = 0\n",
+    )?;
+    commit(fixture.root())?;
+    let temporary = fixture.temporary_directory();
+    let registry = temporary.join("action-registry");
+    let helper = temporary.join("action-uploader.mjs");
+    let marker = temporary.join("preservation.json");
+    fs::write(
+        &helper,
+        format!(
+            "import fs from 'node:fs';\nif (fs.existsSync({registry})) process.exit(1);\nfs.writeFileSync({marker}, JSON.stringify(process.argv.slice(2)));\n",
+            registry = serde_json::to_string(&registry.join("release-fixture-0.1.0.crate"))?,
+            marker = serde_json::to_string(&marker)?,
+        ),
+    )?;
+    let harness = temporary.join("action-harness.mjs");
+    fs::write(
+        &harness,
+        format!(
+            "import {{ pathToFileURL }} from 'node:url';\n\
+         const binary = {binary};\nconst {{runAction, runCommand}} = await import(pathToFileURL({runner}).href);\n\
+         const execute = (program, args, cwd, json = false) => {{\n\
+           if (program === binary) args = ['--test-registry', {registry}, ...args];\n\
+           else if (program !== 'git') throw new Error('Unexpected fixture command');\n\
+           return runCommand(program, args, cwd, json);\n\
+         }};\nrunAction('guard', process.env, execute);\nrunAction('release', process.env, execute);\n",
+            binary = serde_json::to_string(binary)?,
+            runner = serde_json::to_string(&support.join("runner.mjs"))?,
+            registry = serde_json::to_string(&registry)?,
+        ),
+    )?;
+    let output_path = temporary.join("action-output");
+    let output = process(Path::new("node"), fixture.root())
+        .arg(harness)
+        .env("GITHUB_ACTIONS", "true")
+        .env("GITHUB_SERVER_URL", "https://github.com")
+        .env("GITHUB_EVENT_NAME", "workflow_dispatch")
+        .env("GITHUB_REF", "refs/heads/master")
+        .env("GITHUB_REPOSITORY", "fixture/project")
+        .env("GITHUB_RUN_ID", "42")
+        .env("GITHUB_RUN_ATTEMPT", "1")
+        .env(
+            "GITHUB_WORKFLOW_REF",
+            "fixture/project/.github/workflows/release.yml@refs/heads/master",
+        )
+        .env("RUNNER_ENVIRONMENT", "github-hosted")
+        .env("RCR_DEFAULT_BRANCH", "master")
+        .env("RCR_ROOT", fixture.root())
+        .env("RCR_BINARY", binary)
+        .env("RCR_HELPER", helper)
+        .env_remove("RCR_CONFIG")
+        .env_remove("RCR_VERSION")
+        .env_remove("CARGO_REGISTRY_TOKEN")
+        .env("GITHUB_OUTPUT", &output_path)
+        .env("GITHUB_STEP_SUMMARY", temporary.join("summary"))
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "Actual action runner failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    let outputs = fs::read_to_string(output_path)?;
+    assert!(outputs.contains("version=0.1.0\n"));
+    assert!(outputs.contains("\"status\":\"verified\""));
+    let preserved: Value = serde_json::from_slice(&fs::read(marker)?)?;
+    assert_eq!(preserved[1], "release-fixture");
+    assert_eq!(
+        fs::read(registry.join("release-fixture-0.1.0.crate"))?,
+        fs::read(fixture.root().join(".git/rcr/release-fixture-0.1.0.crate"))?
+    );
+    Git::new(fixture.root(), "master", "origin")?.assert_clean()?;
     Ok(())
 }

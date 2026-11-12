@@ -22,7 +22,7 @@ With a clean default-branch checkout and meaningful changelog:
 rcr prepare --save-inputs .git/rcr/source-inputs.json
 ```
 
-Preparation validates, commits, packages, and tags locally; it does not publish or push. See [CLI and Configuration](docs/cli.md) for release/verification commands, [Release Workflows](docs/releases.md) for the typed engine, and [Typed Workflows](docs/workflows.md) for custom steps/hooks. Publishing Actions follow separately.
+Preparation validates, commits, packages, and tags locally; it does not publish or push. See [CLI and Configuration](docs/cli.md) for commands, [GitHub Actions](docs/actions.md) for publishing integration, [Release Workflows](docs/releases.md) for the typed engine, and [Typed Workflows](docs/workflows.md) for custom steps/hooks.
 
 ## Configuration
 
@@ -30,7 +30,7 @@ Use trusted data-only `rcr.toml` for built-in numeric/semantic behavior; [CLI an
 
 ## Contributing
 
-Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [CLI and Configuration](docs/cli.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), [Semantic Releases](docs/semantic.md), [Cargo Providers](docs/cargo.md), [Release Providers](docs/providers.md), [GitHub Hosting](docs/hosting.md), [Release Workflows](docs/releases.md), and [Diagnostics and Recovery](docs/recovery.md).
+Read [Contributing](CONTRIBUTING.md), [Design](DESIGN.md), [Changelog](CHANGELOG.md), [Releasing](RELEASING.md), [Agent Instructions](AGENTS.md), [CLI and Configuration](docs/cli.md), [GitHub Actions](docs/actions.md), [Typed Workflows](docs/workflows.md), [Changelogs](docs/changelogs.md), [Semantic Releases](docs/semantic.md), [Cargo Providers](docs/cargo.md), [Release Providers](docs/providers.md), [GitHub Hosting](docs/hosting.md), [Release Workflows](docs/releases.md), and [Diagnostics and Recovery](docs/recovery.md).
 
 ## License
 

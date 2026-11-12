@@ -31,6 +31,11 @@ pub struct Cli {
     pub root: PathBuf,
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
+    #[arg(long, global = true)]
+    pub artifact_directory: Option<PathBuf>,
+    /// Trusted helper from the reviewed composite action, not data-only configuration.
+    #[arg(long, global = true, hide = true)]
+    pub github_artifact_uploader: Option<PathBuf>,
     /// Explicit isolated publication adapter; never auto-selected.
     #[arg(long, global = true, hide = true)]
     pub test_registry: Option<PathBuf>,
@@ -341,9 +346,10 @@ pub fn run(cli: Cli) -> Result<Value> {
     };
     let repository = Arc::new(Git::new(&root, &config.default_branch, &config.remote)?);
     let package = Arc::new(CargoPackage::from_manifest(root.join(&config.manifest))?);
-    let directory = config
+    let directory = cli
         .artifact_directory
         .as_ref()
+        .or(config.artifact_directory.as_ref())
         .map(|path| root.join(path))
         .map(Ok)
         .unwrap_or_else(|| repository.artifact_directory())?;
@@ -385,6 +391,10 @@ pub fn run(cli: Cli) -> Result<Value> {
     workflow.components.next_version = Arc::new(next);
     workflow.components.verifier = Arc::new(verifier);
     workflow.components.execution = Arc::from(execution_provider(&config.default_branch));
+    if let Some(helper) = cli.github_artifact_uploader {
+        workflow.components.preserver =
+            Arc::new(crate::actions::GitHubArtifacts::new(root.join(helper))?);
+    }
     if let Some(repository) = config.github_repository {
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));
     }

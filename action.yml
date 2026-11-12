@@ -1,0 +1,85 @@
+name: Rust Crate Release
+description: Validate, preserve, publish, and reconcile an exact Cargo release archive
+author: dblock
+branding:
+  icon: package
+  color: orange
+inputs:
+  root:
+    description: Cargo project checkout path
+    default: .
+  config:
+    description: Optional rcr.toml path relative to the project root
+    default: ''
+  version:
+    description: Optional explicit stable release version
+    default: ''
+outputs:
+  name:
+    description: Released crate name
+    value: ${{ steps.release.outputs.name }}
+  version:
+    description: Released crate version
+    value: ${{ steps.release.outputs.version }}
+  archive:
+    description: Retained exact crate archive
+    value: ${{ steps.release.outputs.archive }}
+  checksum:
+    description: Released archive SHA-256
+    value: ${{ steps.release.outputs.checksum }}
+  verification:
+    description: JSON verification result
+    value: ${{ steps.release.outputs.verification }}
+runs:
+  using: composite
+  steps:
+    - name: Set Up Node
+      uses: actions/setup-node@v7.1.0
+      with:
+        node-version: '26.13.1'
+    - name: Guard Release and Locate Diagnostics
+      id: paths
+      shell: bash
+      env:
+        RCR_ROOT: ${{ inputs.root }}
+        RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: node "$GITHUB_ACTION_PATH/actions/runner.mjs" guard
+    - name: Set Up Rust
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      with:
+        toolchain: '1.99.1'
+    - name: Install Artifact Support
+      shell: bash
+      run: npm ci --ignore-scripts --prefix "$GITHUB_ACTION_PATH/actions"
+    - name: Install Release Tool
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: '1.99.1'
+      run: cargo install --locked --path "$GITHUB_ACTION_PATH" --root "$RUNNER_TEMP/rcr-tool"
+    - name: Run Release
+      id: release
+      shell: bash
+      env:
+        RCR_ROOT: ${{ inputs.root }}
+        RCR_CONFIG: ${{ inputs.config }}
+        RCR_VERSION: ${{ inputs.version }}
+        RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GITHUB_TOKEN: ${{ github.token }}
+        RUSTUP_TOOLCHAIN: '1.99.1'
+      run: |
+        export RCR_BINARY="$RUNNER_TEMP/rcr-tool/bin/rcr"
+        export RCR_HELPER="$GITHUB_ACTION_PATH/actions/upload.mjs"
+        node "$GITHUB_ACTION_PATH/actions/runner.mjs" release
+    - name: Retain Final Diagnostics
+      if: always() && steps.paths.outputs.directory != ''
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: rcr-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+        include-hidden-files: true
+        if-no-files-found: warn
+        path: |
+          ${{ steps.paths.outputs.directory }}/*.crate
+          ${{ steps.paths.outputs.directory }}/*.bundle
+          ${{ steps.paths.outputs.directory }}/release.json
+          ${{ steps.paths.outputs.directory }}/execution.json
+          ${{ steps.paths.outputs.directory }}/source-inputs.json

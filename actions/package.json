@@ -1,0 +1,14 @@
+{
+  "name": "rust-crate-release-actions-support",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=26" },
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check upload.mjs && node --check runner.mjs && node --check action.test.mjs"
+  },
+  "dependencies": {
+    "@actions/artifact": "6.3.1"
+  }
+}
