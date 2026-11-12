@@ -1,10 +1,9 @@
 # Changelog
 
-## 0.1.1 (Next)
+## 0.1.1 (2026/11/12)
 
 - [#27](https://github.com/dblock/rust-crate-release/pull/27): Install rustfmt and Clippy for release validation and retain source inputs in recovery artifacts instead of executing them after notification - [@dblock](https://github.com/dblock).
 - [#28](https://github.com/dblock/rust-crate-release/pull/28): Install self-release validation tools through an optional Actions setup command and report failed internal steps to failure callbacks - [@dblock](https://github.com/dblock).
-- Your contribution here.
 
 ## 0.1.0 (2026/11/12)
 
