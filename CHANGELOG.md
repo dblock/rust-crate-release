@@ -11,4 +11,5 @@
 - [#9](https://github.com/dblock/rust-crate-release/pull/9): Configure repository release preparation for its Intridea changelog and full workspace, distribution, and artifact-support validation - [@dblock](https://github.com/dblock).
 - [#10](https://github.com/dblock/rust-crate-release/pull/10): Add Rust Actions commands and independent remote recovery-artifact verification before publication - [@dblock](https://github.com/dblock).
 - [#11](https://github.com/dblock/rust-crate-release/pull/11): Document 0.1.0 installation, project setup, trusted publishing, file-editing lifecycle hooks, release operation, and recovery - [@dblock](https://github.com/dblock).
+- [#13](https://github.com/dblock/rust-crate-release/pull/13): Add scoped global literal and regex Markdown section substitutions with capture references - [@dblock](https://github.com/dblock).
 - Your contribution here.

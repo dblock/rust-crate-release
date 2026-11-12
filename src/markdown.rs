@@ -312,6 +312,34 @@ impl MarkdownSection {
         Ok(replace_range(source, current.body..current.end, &body))
     }
 
+    /// Replace every literal occurrence in this section's body only.
+    pub fn replace_all_text(
+        &self,
+        source: &str,
+        search: &str,
+        replacement: &str,
+    ) -> Result<String> {
+        let current = self.locate(source)?;
+        let ending = LineEnding::detect(source)?;
+        let replacement = ending.normalize(replacement)?;
+        let search = ending.normalize(search)?;
+        let body = source[current.body..current.end].replace(&search, &replacement);
+        LineEnding::detect(&body)?;
+        Ok(replace_range(source, current.body..current.end, &body))
+    }
+
+    /// Globally substitute a Rust regex within the section, with `$name` captures.
+    pub fn replace_regex(&self, source: &str, pattern: &str, replacement: &str) -> Result<String> {
+        let current = self.locate(source)?;
+        let ending = LineEnding::detect(source)?;
+        let replacement = ending.normalize(replacement)?;
+        let pattern = regex::Regex::new(pattern)
+            .map_err(|error| Error::invalid(format!("Invalid section regex: {error}")))?;
+        let body = pattern.replace_all(&source[current.body..current.end], replacement.as_str());
+        LineEnding::detect(&body)?;
+        Ok(replace_range(source, current.body..current.end, &body))
+    }
+
     pub fn validate_file(&self, path: &Path) -> Result<()> {
         let source = std::fs::read_to_string(path)?;
         self.locate(&source)?;
@@ -327,6 +355,23 @@ impl MarkdownSection {
     pub fn replace_text_file(&self, path: &Path, search: &str, replacement: &str) -> Result<()> {
         let source = std::fs::read_to_string(path)?;
         let updated = self.replace_text(&source, search, replacement)?;
+        write_changed(path, &source, &updated)
+    }
+
+    pub fn replace_all_text_file(
+        &self,
+        path: &Path,
+        search: &str,
+        replacement: &str,
+    ) -> Result<()> {
+        let source = std::fs::read_to_string(path)?;
+        let updated = self.replace_all_text(&source, search, replacement)?;
+        write_changed(path, &source, &updated)
+    }
+
+    pub fn replace_regex_file(&self, path: &Path, pattern: &str, replacement: &str) -> Result<()> {
+        let source = std::fs::read_to_string(path)?;
+        let updated = self.replace_regex(&source, pattern, replacement)?;
         write_changed(path, &source, &updated)
     }
 }
@@ -419,6 +464,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn global_substitutions_preserve_section_boundaries_and_capture_references() -> Result {
+        let section = MarkdownSection::new("## Stable")?;
+        let source = "# Versions\r\n\r\n## Stable\r\n\r\nv0.1.0 and v0.2.0\r\n\r\n### Nested\r\nv0.3.0\r\n\r\n## Older\r\nv0.1.0";
+        assert_eq!(
+            section.replace_regex(source, r"v(\d+)\.\d+\.\d+", "v${1}.9.0")?,
+            "# Versions\r\n\r\n## Stable\r\n\r\nv0.9.0 and v0.9.0\r\n\r\n### Nested\r\nv0.9.0\r\n\r\n## Older\r\nv0.1.0"
+        );
+        assert_eq!(
+            section.replace_all_text(source, "v0.", "v1.")?,
+            "# Versions\r\n\r\n## Stable\r\n\r\nv1.1.0 and v1.2.0\r\n\r\n### Nested\r\nv1.3.0\r\n\r\n## Older\r\nv0.1.0"
+        );
+        assert_eq!(section.replace_regex(source, "absent", "new")?, source);
+        assert!(section.replace_regex(source, "[", "new").is_err());
+        assert!(section.replace_regex(source, "v0", "bad\r").is_err());
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("README.md");
+        std::fs::write(&path, source)?;
+        assert!(section.replace_regex_file(&path, "[", "new").is_err());
+        assert_eq!(std::fs::read_to_string(&path)?, source);
+        section.replace_regex_file(&path, r"v0\.\d+\.\d+", "stable")?;
+        section.replace_all_text_file(&path, "stable", "ready\nnow")?;
+        let updated = std::fs::read_to_string(path)?;
+        assert_eq!(updated.matches("ready\r\nnow").count(), 3);
+        assert!(updated.ends_with("## Older\r\nv0.1.0"));
+        Ok(())
+    }
     #[test]
     fn prompts_in_opaque_examples_are_untouched() {
         let source = "- Your contribution here.\n\n```\n- Your contribution here.\n```\n\n> - Your contribution here.\n\n<div>\n- Your contribution here.\n</div>\n\n- Your contribution here.\n";
