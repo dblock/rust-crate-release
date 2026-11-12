@@ -12,9 +12,22 @@ pub fn run_with_env(
     args: &[&str],
     environment: &[(&str, &str)],
 ) -> Result<Output> {
-    let output = Command::new(program)
-        .args(args)
-        .current_dir(root)
+    run_with_env_and_remove(root, program, args, environment, &[])
+}
+
+pub fn run_with_env_and_remove(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    environment: &[(&str, &str)],
+    remove: &[&str],
+) -> Result<Output> {
+    let mut command = Command::new(program);
+    command.args(args).current_dir(root);
+    for name in remove {
+        command.env_remove(name);
+    }
+    let output = command
         .env("GIT_TERMINAL_PROMPT", "0")
         .envs(environment.iter().copied())
         .output()?;

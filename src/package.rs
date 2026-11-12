@@ -81,6 +81,49 @@ impl Artifact {
         self.validated_bytes().map(|_| ())
     }
 
+    /// Reads the clean source commit from the verified retained archive, if recorded.
+    pub fn vcs_commit(&self) -> Result<Option<String>> {
+        let bytes = self.validated_bytes()?;
+        let extracted = extract(&bytes)?;
+        let info = match fs::read(extracted.root.join(".cargo_vcs_info.json")) {
+            Ok(info) => info,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(Error::from(error).context("reading Cargo archive VCS metadata"));
+            }
+        };
+        let info: Value = serde_json::from_slice(&info)
+            .map_err(|error| Error::from(error).context("invalid Cargo archive VCS metadata"))?;
+        let git = info
+            .get("git")
+            .and_then(Value::as_object)
+            .ok_or_else(|| Error::invalid("Cargo archive VCS metadata has no valid git object"))?;
+        match git.get("dirty") {
+            None | Some(Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => {
+                return Err(Error::invalid("Cargo archive records dirty source"));
+            }
+            _ => {
+                return Err(Error::invalid(
+                    "Cargo archive VCS dirty field must be a boolean",
+                ));
+            }
+        }
+        let commit = git
+            .get("sha1")
+            .and_then(Value::as_str)
+            .filter(|commit| {
+                matches!(commit.len(), 40 | 64)
+                    && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
+            .ok_or_else(|| {
+                Error::invalid(
+                    "Cargo archive VCS commit must be a complete 40- or 64-digit hexadecimal hash",
+                )
+            })?;
+        Ok(Some(commit.to_ascii_lowercase()))
+    }
+
     /// Reads once so the publisher cannot upload different bytes after verification.
     pub(crate) fn validated_bytes(&self) -> Result<Vec<u8>> {
         let bytes = fs::read(&self.path)?;
@@ -1044,6 +1087,86 @@ pub(crate) mod tests {
             archive.append_data(&mut header, path, *contents).unwrap();
         }
         archive.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn vcs_archive(info: Option<&[u8]>) -> (tempfile::TempDir, Artifact) {
+        let mut entries: Vec<(&str, tar::EntryType, &[u8])> =
+            vec![
+            (
+                "rcr-vcs-fixture-1.0.0/Cargo.toml",
+                tar::EntryType::Regular,
+                b"[package]\nname = \"rcr-vcs-fixture\"\nversion = \"1.0.0\"\nedition = \"2024\"\n",
+            ),
+            (
+                "rcr-vcs-fixture-1.0.0/Cargo.lock",
+                tar::EntryType::Regular,
+                b"version = 4\n[[package]]\nname = \"rcr-vcs-fixture\"\nversion = \"1.0.0\"\n",
+            ),
+            ("rcr-vcs-fixture-1.0.0/src/lib.rs", tar::EntryType::Regular, b""),
+        ];
+        if let Some(info) = info {
+            entries.push((
+                "rcr-vcs-fixture-1.0.0/.cargo_vcs_info.json",
+                tar::EntryType::Regular,
+                info,
+            ));
+        }
+        archive_fixture(&archive(&entries))
+    }
+
+    #[test]
+    fn vcs_commit_reads_complete_clean_sha1_and_sha256_metadata() {
+        for info in [
+            json!({"git": {"sha1": "ABCDEF1234".repeat(4)}, "path_in_vcs": ""}),
+            json!({"git": {"sha1": "1234abcd".repeat(8), "dirty": false}, "path_in_vcs": "member"}),
+        ] {
+            let bytes = serde_json::to_vec(&info).unwrap();
+            let (_retained, artifact) = vcs_archive(Some(&bytes));
+            assert_eq!(
+                artifact.vcs_commit().unwrap(),
+                Some(info["git"]["sha1"].as_str().unwrap().to_ascii_lowercase()),
+            );
+        }
+    }
+
+    #[test]
+    fn vcs_commit_rejects_dirty_and_malformed_info_without_rejecting_artifact_open() {
+        let mut infos: Vec<_> = [
+            json!({"git": {"sha1": "a".repeat(40), "dirty": true}}),
+            json!({"git": {"sha1": "a".repeat(40), "dirty": "false"}}),
+            json!({"git": {"sha1": "a".repeat(40), "dirty": null}}),
+            json!({"git": {"sha1": "a".repeat(39)}}),
+            json!({"git": {"sha1": "a".repeat(65)}}),
+            json!({"git": {"sha1": "g".repeat(40)}}),
+            json!({"git": {"sha1": 123}}),
+            json!({"git": {}}),
+            json!({"git": null}),
+            json!({}),
+            json!([]),
+        ]
+        .iter()
+        .map(|info| serde_json::to_vec(info).unwrap())
+        .collect();
+        infos.push(b"not valid JSON".to_vec());
+        for info in infos {
+            let (_retained, artifact) = vcs_archive(Some(&info));
+            artifact.verify().unwrap();
+            assert!(artifact.vcs_commit().is_err());
+        }
+    }
+
+    #[test]
+    fn vcs_commit_absence_is_optional_but_retained_byte_changes_fail() {
+        let (_retained, artifact) = vcs_archive(None);
+        assert_eq!(artifact.vcs_commit().unwrap(), None);
+        fs::write(artifact.path(), b"changed retained bytes").unwrap();
+        assert!(
+            artifact
+                .vcs_commit()
+                .unwrap_err()
+                .to_string()
+                .contains("checksum")
+        );
     }
 
     #[test]
