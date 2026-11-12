@@ -1,0 +1,37 @@
+name: Package
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Archive Consumer on ${{ matrix.entry.os }}
+    runs-on: ${{ matrix.entry.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        entry:
+          - { os: ubuntu-latest }
+          - { os: macos-latest }
+          - { os: windows-latest }
+    steps:
+      - name: Check Out Source
+        uses: actions/checkout@v7.0.1
+      - name: Set Up Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: '1.99.1'
+      - name: Cache Rust Dependencies
+        uses: Swatinem/rust-cache@v2.9.3
+      - name: Validate Archive and Consumer
+        run: cargo xtask package
+      - name: Upload Validated Crate
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: crate-${{ matrix.entry.os }}
+          path: target/package/*.crate

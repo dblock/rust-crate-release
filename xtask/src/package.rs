@@ -1,0 +1,125 @@
+use crate::{Result, run};
+use flate2::read::GzDecoder;
+use serde_json::Value;
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Component, Path};
+use std::process::Command;
+use tar::Archive;
+
+fn expected_file(path: &str) -> bool {
+    matches!(
+        path,
+        ".cargo_vcs_info.json"
+            | "Cargo.toml"
+            | "Cargo.toml.orig"
+            | "Cargo.lock"
+            | "src/lib.rs"
+            | "README.md"
+            | "LICENSE"
+            | "CHANGELOG.md"
+            | "DESIGN.md"
+            | "CONTRIBUTING.md"
+            | "AGENTS.md"
+            | "RELEASING.md"
+    )
+}
+
+pub fn check(root: &Path) -> Result {
+    let metadata = Command::new("cargo")
+        .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
+        .current_dir(root)
+        .output()?;
+    if !metadata.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&metadata.stderr)
+        )
+        .into());
+    }
+    let metadata: Value = serde_json::from_slice(&metadata.stdout)?;
+    let package = metadata["packages"]
+        .as_array()
+        .ok_or("missing Cargo packages")?
+        .iter()
+        .find(|package| package["name"] == "rust-crate-release")
+        .ok_or("missing release package")?;
+    let version = package["version"].as_str().ok_or("missing Cargo version")?;
+    let archive_root = format!("rust-crate-release-{version}");
+    let target = metadata["target_directory"]
+        .as_str()
+        .ok_or("missing target directory")?;
+    run(
+        root,
+        "cargo",
+        &[
+            "package",
+            "--locked",
+            "--allow-dirty",
+            "--package",
+            "rust-crate-release",
+        ],
+    )?;
+    let archive_path = Path::new(target)
+        .join("package")
+        .join(format!("{archive_root}.crate"));
+    let bytes = fs::read(&archive_path)?;
+    let temporary = tempfile::tempdir()?;
+    let mut archive = Archive::new(GzDecoder::new(bytes.as_slice()));
+    let mut files = BTreeSet::new();
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?.into_owned();
+        let relative = path.strip_prefix(&archive_root)?;
+        if !entry.header().entry_type().is_file()
+            || relative
+                .components()
+                .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return Err(format!("unexpected archive entry: {}", path.display()).into());
+        }
+        let relative = relative.to_str().ok_or("non-UTF-8 archive path")?;
+        if !expected_file(relative) || !files.insert(relative.to_owned()) {
+            return Err(format!("unexpected or duplicate archive file: {relative}").into());
+        }
+        if !entry.unpack_in(temporary.path())? {
+            return Err("archive extraction escaped the consumer directory".into());
+        }
+    }
+    for required in [
+        "src/lib.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "LICENSE",
+    ] {
+        if !files.contains(required) {
+            return Err(format!("missing archive file: {required}").into());
+        }
+    }
+    let consumer = temporary.path().join("consumer");
+    fs::create_dir_all(consumer.join("src"))?;
+    fs::write(
+        consumer.join("Cargo.toml"),
+        format!(
+            "[package]\nname = \"archive-consumer\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\
+             [dependencies]\nrust-crate-release = {{ path = \"../{archive_root}\", version = \"={version}\" }}\n"
+        ),
+    )?;
+    fs::write(
+        consumer.join("src/main.rs"),
+        "use rust_crate_release as _;\nfn main() {}\n",
+    )?;
+    run(&consumer, "cargo", &["generate-lockfile", "--offline"])?;
+    run(&consumer, "cargo", &["run", "--locked", "--offline"])?;
+    if fs::read(&archive_path)? != bytes {
+        return Err("validated archive changed during consumer validation".into());
+    }
+    eprintln!(
+        "Validated {} ({} bytes, {} files) and its extracted-artifact consumer.",
+        archive_path.display(),
+        bytes.len(),
+        files.len()
+    );
+    Ok(())
+}

@@ -1,0 +1,7 @@
+/target/
+/coverage/
+/.rumdl_cache/
+/.rcr/
+/.env
+/.env.*
+!.env.example
