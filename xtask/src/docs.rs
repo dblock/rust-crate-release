@@ -167,6 +167,106 @@ fn check_markdown_directory(root: &Path, recursive: bool, errors: &mut Vec<Strin
 mod tests {
     use super::*;
 
+    fn composite_step(name: &str) -> Yaml {
+        let documents = YamlLoader::load_from_str(include_str!("../../action.yml")).unwrap();
+        documents[0]["runs"]["steps"]
+            .as_vec()
+            .unwrap()
+            .iter()
+            .find(|step| step["name"].as_str() == Some(name))
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn composite_action_installs_validation_components() {
+        let step = composite_step("Set Up Rust");
+        let components: Vec<_> = step["with"]["components"]
+            .as_str()
+            .expect("release validation requires Rust components")
+            .split(',')
+            .map(str::trim)
+            .collect();
+        assert!(components.contains(&"rustfmt"));
+        assert!(components.contains(&"clippy"));
+    }
+
+    #[test]
+    fn composite_action_preserves_source_inputs_once_per_artifact() {
+        for name in ["Preserve Exact Release", "Retain Final Diagnostics"] {
+            let step = composite_step(name);
+            assert_eq!(
+                step["with"]["path"]
+                    .as_str()
+                    .unwrap()
+                    .lines()
+                    .map(str::trim)
+                    .filter(
+                        |path| *path == "${{ steps.paths.outputs.directory }}/source-inputs.json"
+                    )
+                    .count(),
+                1,
+                "{name} must preserve source inputs exactly once"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn composite_action_notification_preserves_status_without_executing_inputs() -> Result {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::Command;
+
+        let root = tempfile::tempdir()?;
+        let diagnostics = root.path().join("diagnostics");
+        fs::create_dir(&diagnostics)?;
+        let inputs = diagnostics.join("source-inputs.json");
+        fs::write(&inputs, "{}")?;
+        fs::set_permissions(&inputs, fs::Permissions::from_mode(0o600))?;
+        let tool = root.path().join("rcr-tool/bin/rcr");
+        fs::create_dir_all(tool.parent().unwrap())?;
+        fs::write(
+            &tool,
+            "#!/usr/bin/env bash\nprintf '%s\\n' \"$@\" > \"$RUNNER_TEMP/notified\"\nexit \"$RCR_TEST_EXIT\"\n",
+        )?;
+        fs::set_permissions(&tool, fs::Permissions::from_mode(0o755))?;
+        let step = composite_step("Notify Release Result");
+        let script = step["run"].as_str().unwrap().replace(
+            "${{ steps.paths.outputs.directory }}",
+            diagnostics.to_str().unwrap(),
+        );
+        for code in [0, 23] {
+            let output = Command::new("bash")
+                .args([
+                    "--noprofile",
+                    "--norc",
+                    "-e",
+                    "-o",
+                    "pipefail",
+                    "-c",
+                    &script,
+                ])
+                .env("RUNNER_TEMP", root.path())
+                .env("RCR_ROOT", root.path())
+                .env("RCR_STATUS", "failure")
+                .env("RCR_FAILURE_COMMAND", "")
+                .env("RCR_STEPS", "{}")
+                .env("RCR_TEST_EXIT", code.to_string())
+                .output()?;
+            assert_eq!(
+                output.status.code(),
+                Some(code),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                fs::read_to_string(root.path().join("notified"))?,
+                format!("--root\n{}\nactions\nnotify\n", root.path().display())
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn markdown_checks_titles_without_mistaking_code_for_prose() {
         assert!(markdown("# Working on rust-crate-release\n\n## Setup and Validation\n\n## `rcr prepare` and GitHub Actions\n\n```md\n# not a heading\n```\n").is_ok());
