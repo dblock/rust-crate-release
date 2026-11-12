@@ -464,7 +464,7 @@ fn mask(secret: &str) {
         .replace('%', "%25")
         .replace('\r', "%0D")
         .replace('\n', "%0A");
-    println!("::add-mask::{escaped}");
+    eprintln!("::add-mask::{escaped}");
 }
 
 fn upload_body(metadata: &Value, bytes: &[u8]) -> Result<Vec<u8>> {
@@ -499,6 +499,29 @@ mod tests {
     use std::sync::Mutex;
     use std::thread::{self, JoinHandle};
     use std::time::Instant;
+
+    #[test]
+    fn actions_masking_keeps_machine_stdout_clean() -> Result {
+        if std::env::var("RCR_TEST_MASK_STDERR_CHILD").as_deref() == Ok("1") {
+            mask("dummy%token\r\n");
+            return Ok(());
+        }
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "registry::tests::actions_masking_keeps_machine_stdout_clean",
+                "--nocapture",
+            ])
+            .env("RCR_TEST_MASK_STDERR_CHILD", "1")
+            .env("GITHUB_ACTIONS", "true")
+            .output()?;
+        assert!(output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("::add-mask::"));
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("::add-mask::dummy%25token%0D%0A")
+        );
+        Ok(())
+    }
 
     struct Request {
         method: String,

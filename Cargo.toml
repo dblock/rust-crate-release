@@ -23,6 +23,11 @@ include = [
     "/AGENTS.md",
     "/RELEASING.md",
     "/docs/**",
+    "/action.yml",
+    "/actions/*.mjs",
+    "/actions/package.json",
+    "/actions/package-lock.json",
+    "/.github/workflows/release.yml",
 ]
 
 [workspace]

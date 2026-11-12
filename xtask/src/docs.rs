@@ -102,6 +102,11 @@ fn workflow(source: &str) -> std::result::Result<(), String> {
     }
     let document = &documents[0];
     display_name(document)?;
+    if let Some(steps) = document["runs"]["steps"].as_vec() {
+        for step in steps {
+            display_name(step)?;
+        }
+    }
     if let Some(jobs) = document["jobs"].as_hash() {
         for job in jobs.values() {
             display_name(job)?;
@@ -131,6 +136,11 @@ pub fn check(root: &Path) -> Result {
         {
             workflow(&fs::read_to_string(&path)?)
                 .unwrap_or_else(|error| errors.push(format!("{}: {error}", path.display())));
+        }
+        let action = root.join("action.yml");
+        if action.is_file() {
+            workflow(&fs::read_to_string(&action)?)
+                .unwrap_or_else(|error| errors.push(format!("{}: {error}", action.display())));
         }
     }
     if errors.is_empty() {
@@ -178,12 +188,14 @@ mod tests {
 
     #[test]
     fn yaml_checks_only_workflow_job_and_step_display_names() {
+        assert!(workflow("name: Rust Crate Release\nruns:\n  using: composite\n  steps:\n    - name: Run Release\n      run: rcr release\n").is_ok());
         assert!(workflow("name: Test\non: push\njobs:\n  unit_tests:\n    name: Rust ${{ matrix.entry.rust }} on ${{ matrix.entry.os }}\n    runs-on: ubuntu-latest\n    steps:\n      - name: Run Tests\n        run: cargo test\n      - uses: example/action@v1\n        with:\n          name: lowercase artifact name\n").is_ok());
         for source in [
             "name: run tests\njobs: {}\n",
             "jobs:\n  test:\n    name: run Tests\n",
             "jobs:\n  test:\n    steps:\n      - name: Run tests\n",
             "name: 42\n",
+            "runs:\n  using: composite\n  steps:\n    - name: Run release\n",
         ] {
             assert!(workflow(source).is_err(), "{source}");
         }

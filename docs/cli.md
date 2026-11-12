@@ -30,7 +30,7 @@ Object key order is not a public contract. Workflow phases and configured valida
 
 Separate preparation/publication commands must explicitly pass `--inputs`; ordinary commands never discover or restore diagnostic receipts. An omitted release override is taken from those explicit inputs; a conflicting override fails engine validation. The engine rechecks ancestry, timestamp, identity, tags, and actual outputs. Semantic analysis is not repeated against the newly created tag. Failed validation preserves edits; inspect and explicitly repair/validate/commit the checkout before retrying with reviewed original inputs.
 
-Inside GitHub Actions, source-input transport is bound to the repository, workflow ref, run ID, and attempt. Another run/attempt is rejected; downloaded state is not an automatic recovery mechanism. Fresh dispatches capture their own inputs. The separate Actions integration supplies durable pre-publication uploading; the bare CLI intentionally refuses GitHub publication without an uploader.
+Inside GitHub Actions, source-input transport is bound to the repository, workflow ref, run ID, and attempt. Another run/attempt is rejected; downloaded state is not an automatic recovery mechanism. Fresh dispatches capture their own inputs. [GitHub Actions](actions.md) supplies durable pre-publication uploading; the bare CLI intentionally refuses GitHub publication without an uploader. The hidden `--github-artifact-uploader` option selects that reviewed, trusted executable helper, never configuration-loaded code.
 
 ## Configuration
 
@@ -54,7 +54,7 @@ verification-attempts = 6
 verification-delay-seconds = 5
 ```
 
-These are numeric defaults. `manifest` explicitly selects one package, including a workspace member. Changelog paths must stay inside the Git root without symbolic-link traversal. `artifact-directory` optionally selects storage; otherwise Git's `rcr` metadata directory is used, including for linked worktrees. A configured source-tree artifact directory must already be ignored.
+These are numeric defaults. `manifest` explicitly selects one package, including a workspace member. Changelog paths must stay inside the Git root without symbolic-link traversal. `artifact-directory` optionally selects storage; the global `--artifact-directory` flag overrides it. Otherwise Git's `rcr` metadata directory is used, including for linked worktrees. A configured source-tree artifact directory must already be ignored.
 
 Numeric changelog formats are `keep-a-changelog` and `intridea`. Optional `placeholder` and `sections` configure Keep a Changelog templates; Intridea accepts a placeholder, defaults to `- Your contribution here.`, and does not accept sections. Semantic mode uses `workflow = "semantic"`, defaults to generated notes and disabled next development, and accepts only `changelog-format = "generated"` if explicitly supplied. Generated notes reject handwritten template settings.
 

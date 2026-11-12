@@ -13,6 +13,7 @@ mod cli_fixture;
 fn expected_file(path: &str) -> bool {
     (path.starts_with("src/") && path.ends_with(".rs"))
         || (path.starts_with("docs/") && path.ends_with(".md"))
+        || (path.starts_with("actions/") && path.ends_with(".mjs"))
         || matches!(
             path,
             ".cargo_vcs_info.json"
@@ -26,6 +27,10 @@ fn expected_file(path: &str) -> bool {
                 | "CONTRIBUTING.md"
                 | "AGENTS.md"
                 | "RELEASING.md"
+                | "action.yml"
+                | "actions/package.json"
+                | "actions/package-lock.json"
+                | ".github/workflows/release.yml"
         )
 }
 
@@ -145,6 +150,7 @@ pub fn check(root: &Path) -> Result {
         &install
             .join("bin")
             .join(format!("rcr{}", std::env::consts::EXE_SUFFIX)),
+        &temporary.path().join(&archive_root).join("actions"),
     )?;
     if fs::read(&archive_path)? != bytes {
         return Err("validated archive changed during consumer validation".into());

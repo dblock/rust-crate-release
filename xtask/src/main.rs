@@ -49,6 +49,7 @@ fn execute() -> Result {
             run(root, "rumdl", &["check", "."])?;
             run(root, "typos", &[])?;
             run(root, "actionlint", &[])?;
+            run(root, "npm", &["--prefix", "actions", "run", "lint"])?;
         }
         Some("package") => package::check(root)?,
         _ => return Err("usage: cargo xtask <lint|package>".into()),
