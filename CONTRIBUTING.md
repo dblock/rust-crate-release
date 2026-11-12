@@ -21,7 +21,7 @@ cargo xtask package
 cargo llvm-cov --locked --workspace --lcov --output-path target/lcov.info
 ```
 
-Node 26 or later is required for Actions support. Install its private locked dependencies with `npm ci --ignore-scripts --prefix actions` and run `npm --prefix actions test`; ordinary lint includes Node syntax checks. The Node tests inject the artifact client and never upload to a real service. Rust shared executable fixtures exercise uploader failure/success before isolated publication. [GitHub Actions](docs/actions.md) documents the current official client's transitive advisory limitation; do not apply unverified major overrides or downgrade the client.
+No Node/npm installation is required: all project-owned code, fixtures, and maintenance commands are Rust. The standard GitHub upload action is a separate workflow step; Rust independently verifies its stored bytes through the public REST API before publication. Shared source/installed executable fixtures exercise preparation, rejected remote bytes, and successful verification before isolated publication. [GitHub Actions](docs/actions.md) documents permissions and live-service validation limits.
 
 Tests and lint must pass for the exact revision before every push, including PR updates. Run package validation before committing changes to packaging or public entry points. Reuse final check results if the tested content/configuration has not changed; do not repeatedly run full suites during unrelated edits. Run focused tests while debugging, for example `cargo test --locked -p xtask docs::tests`.
 

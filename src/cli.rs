@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[derive(Debug, Parser)]
+#[derive(Clone, Debug, Parser)]
 #[command(name = "rcr", version, about = "Release an exact Rust crate archive")]
 pub struct Cli {
     #[arg(long, global = true, default_value = ".")]
@@ -33,9 +33,12 @@ pub struct Cli {
     pub config: Option<PathBuf>,
     #[arg(long, global = true)]
     pub artifact_directory: Option<PathBuf>,
-    /// Trusted helper from the reviewed composite action, not data-only configuration.
+    /// Immutable GitHub upload to verify independently before publication.
     #[arg(long, global = true, hide = true)]
-    pub github_artifact_uploader: Option<PathBuf>,
+    pub github_artifact_id: Option<u64>,
+    /// Explicit loopback artifact API; requires the isolated publication adapter.
+    #[arg(long, global = true, hide = true, requires = "test_registry")]
+    pub test_artifact_api: Option<String>,
     /// Explicit isolated publication adapter; never auto-selected.
     #[arg(long, global = true, hide = true)]
     pub test_registry: Option<PathBuf>,
@@ -43,8 +46,13 @@ pub struct Cli {
     pub command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Clone, Debug, Subcommand)]
 pub enum Command {
+    /// GitHub Actions preparation and publication using the same Rust engine.
+    Actions {
+        #[command(subcommand)]
+        command: crate::actions::ActionCommand,
+    },
     /// Validate, commit, package, tag, and retain; do not publish or push.
     Prepare(ReleaseArgs),
     /// Reconcile and complete the release, then verify the released archive.
@@ -319,6 +327,9 @@ fn archive_option(root: &Path, explicit: Option<PathBuf>) -> Option<PathBuf> {
 
 /// Runs a built-in command. Successful output is one JSON value; progress uses stderr.
 pub fn run(cli: Cli) -> Result<Value> {
+    if let Command::Actions { command } = &cli.command {
+        return crate::actions::run(&cli, *command);
+    }
     let root = dunce::canonicalize(&cli.root)?;
     let config = Configuration::load(&root, cli.config.as_deref())?;
     if let Command::Verify {
@@ -342,7 +353,7 @@ pub fn run(cli: Cli) -> Result<Value> {
     let (operation, args) = match cli.command {
         Command::Prepare(args) => ("prepare", args),
         Command::Release(args) => ("release", args),
-        Command::Verify { .. } => unreachable!(),
+        Command::Verify { .. } | Command::Actions { .. } => unreachable!(),
     };
     let repository = Arc::new(Git::new(&root, &config.default_branch, &config.remote)?);
     let package = Arc::new(CargoPackage::from_manifest(root.join(&config.manifest))?);
@@ -391,9 +402,11 @@ pub fn run(cli: Cli) -> Result<Value> {
     workflow.components.next_version = Arc::new(next);
     workflow.components.verifier = Arc::new(verifier);
     workflow.components.execution = Arc::from(execution_provider(&config.default_branch));
-    if let Some(helper) = cli.github_artifact_uploader {
-        workflow.components.preserver =
-            Arc::new(crate::actions::GitHubArtifacts::new(root.join(helper))?);
+    if let Some(id) = cli.github_artifact_id {
+        workflow.components.preserver = Arc::new(match cli.test_artifact_api {
+            Some(endpoint) => crate::actions::GitHubArtifacts::for_test_server(id, &endpoint)?,
+            None => crate::actions::GitHubArtifacts::new(id)?,
+        });
     }
     if let Some(repository) = config.github_repository {
         workflow.components.host = Some(Arc::new(GitHubReleaseHost::new(&repository)?));

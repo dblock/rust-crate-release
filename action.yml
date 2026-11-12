@@ -33,43 +33,58 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Set Up Node
-      uses: actions/setup-node@v7.1.0
+    - name: Set Up Rust
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       with:
-        node-version: '26.13.1'
+        toolchain: '1.99.1'
+    - name: Install Release Tool
+      shell: bash
+      env:
+        RUSTUP_TOOLCHAIN: '1.99.1'
+      run: cargo install --locked --path "$GITHUB_ACTION_PATH" --root "$RUNNER_TEMP/rcr-tool"
     - name: Guard Release and Locate Diagnostics
       id: paths
       shell: bash
       env:
         RCR_ROOT: ${{ inputs.root }}
         RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-      run: node "$GITHUB_ACTION_PATH/actions/runner.mjs" guard
-    - name: Set Up Rust
-      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      with:
-        toolchain: '1.99.1'
-    - name: Install Artifact Support
-      shell: bash
-      run: npm ci --ignore-scripts --prefix "$GITHUB_ACTION_PATH/actions"
-    - name: Install Release Tool
-      shell: bash
-      env:
         RUSTUP_TOOLCHAIN: '1.99.1'
-      run: cargo install --locked --path "$GITHUB_ACTION_PATH" --root "$RUNNER_TEMP/rcr-tool"
-    - name: Run Release
-      id: release
+      run: '"$RUNNER_TEMP/rcr-tool/bin/rcr" --root "$RCR_ROOT" actions guard'
+    - name: Prepare Release
+      id: prepare
       shell: bash
       env:
         RCR_ROOT: ${{ inputs.root }}
         RCR_CONFIG: ${{ inputs.config }}
         RCR_VERSION: ${{ inputs.version }}
         RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        RUSTUP_TOOLCHAIN: '1.99.1'
+      run: '"$RUNNER_TEMP/rcr-tool/bin/rcr" --root "$RCR_ROOT" actions prepare'
+    - name: Preserve Exact Release
+      id: preserve
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: rcr-release-${{ github.run_id }}-${{ github.run_attempt }}
+        include-hidden-files: true
+        if-no-files-found: error
+        compression-level: 0
+        path: |
+          ${{ steps.prepare.outputs.archive }}
+          ${{ steps.prepare.outputs.bundle }}
+          ${{ steps.paths.outputs.directory }}/source-inputs.json
+          ${{ steps.paths.outputs.directory }}/release.json
+          ${{ steps.paths.outputs.directory }}/execution.json
+    - name: Verify Preservation and Run Release
+      id: release
+      shell: bash
+      env:
+        RCR_ROOT: ${{ inputs.root }}
+        RCR_CONFIG: ${{ inputs.config }}
+        RCR_ARTIFACT_ID: ${{ steps.preserve.outputs.artifact-id }}
+        RCR_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         GITHUB_TOKEN: ${{ github.token }}
         RUSTUP_TOOLCHAIN: '1.99.1'
-      run: |
-        export RCR_BINARY="$RUNNER_TEMP/rcr-tool/bin/rcr"
-        export RCR_HELPER="$GITHUB_ACTION_PATH/actions/upload.mjs"
-        node "$GITHUB_ACTION_PATH/actions/runner.mjs" release
+      run: '"$RUNNER_TEMP/rcr-tool/bin/rcr" --root "$RCR_ROOT" actions release'
     - name: Retain Final Diagnostics
       if: always() && steps.paths.outputs.directory != ''
       uses: actions/upload-artifact@v7.0.2
