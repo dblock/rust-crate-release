@@ -4,6 +4,10 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- [#35](https://github.com/dblock/rust-crate-release/pull/35): Expose workspace test coverage through a README badge and document coverage artifacts and Coveralls repository claiming - [@dblock](https://github.com/dblock).
+
 ### Changed
 
 - [#29](https://github.com/dblock/rust-crate-release/pull/29): Reduce release compilation overhead with verified prebuilt validation tools, Cargo dependency caching, and shared extracted-archive build dependencies while retaining every validation phase - [@dblock](https://github.com/dblock).
