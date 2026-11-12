@@ -1,6 +1,8 @@
 //! Data-only configuration and the built-in release commands.
 
-use crate::changelog::{ChangelogTemplate, GeneratedChangelog, IntrideaChangelog, KeepAChangelog};
+use crate::changelog::{
+    ChangelogTemplate, GeneratedChangelog, IntrideaChangelog, KeepAChangelog, NoChangelog,
+};
 use crate::engine::{
     Analyzed, Captured, CapturedInputs, CommandValidator, NextVersion, RegistryVerifier,
     ReleaseRequest, ReleaseWorkflow, SystemClock,
@@ -97,6 +99,7 @@ pub enum Mode {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ChangelogFormat {
+    Disabled,
     KeepAChangelog,
     Intridea,
     Generated,
@@ -181,6 +184,13 @@ impl Configuration {
         {
             return Err(Error::invalid(
                 "generated changelogs do not accept handwritten templates",
+            ));
+        }
+        if matches!(config.changelog_format, Some(ChangelogFormat::Disabled))
+            && (config.placeholder.is_some() || !config.sections.is_empty())
+        {
+            return Err(Error::invalid(
+                "disabled changelogs do not accept handwritten templates",
             ));
         }
         config.verifier()?;
@@ -374,6 +384,7 @@ pub fn run(cli: Cli) -> Result<Value> {
         workflow = workflow.semantic(Arc::new(GitHistory::new((*repository).clone())));
     }
     workflow.components.changelog = match config.changelog_format {
+        Some(ChangelogFormat::Disabled) => Arc::new(NoChangelog),
         Some(ChangelogFormat::Intridea) => {
             if !config.sections.is_empty() {
                 return Err(Error::invalid("Intridea sections are not configurable"));

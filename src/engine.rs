@@ -659,6 +659,22 @@ fn changelog_path(components: &ReleaseComponents) -> Result<PathBuf> {
     Ok(path)
 }
 
+fn read_changelog(components: &ReleaseComponents) -> Result<String> {
+    if !components.changelog.enabled() {
+        return Ok(String::new());
+    }
+    match fs::read_to_string(changelog_path(components)?) {
+        Ok(source) => Ok(source),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && components.changelog.allows_missing_file() =>
+        {
+            Ok(String::new())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
 #[derive(Clone)]
 pub struct CaptureStep(pub Arc<ReleaseComponents>);
 
@@ -671,9 +687,11 @@ impl Step<ReleaseRequest> for CaptureStep {
         let components = &self.0;
         components.execution.validate()?;
         components.repository.assert_clean()?;
-        let changelog = changelog_path(components)?;
-        if !changelog.exists() && !components.changelog.allows_missing_file() {
-            return Err(Error::invalid("handwritten changelog file is missing"));
+        if components.changelog.enabled() {
+            let changelog = changelog_path(components)?;
+            if !changelog.exists() && !components.changelog.allows_missing_file() {
+                return Err(Error::invalid("handwritten changelog file is missing"));
+            }
         }
         let repository = components.repository.inspect()?;
         if repository.shallow {
@@ -847,12 +865,7 @@ impl Step<Analyzed> for EditStep {
             }
             components.package.set_version(data.release.version())?;
         }
-        let path = changelog_path(components)?;
-        let source = match fs::read_to_string(&path) {
-            Ok(source) => source,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-            Err(error) => return Err(error.into()),
-        };
+        let source = read_changelog(components)?;
         let generated = data
             .capture
             .inputs
@@ -873,13 +886,13 @@ impl Step<Analyzed> for EditStep {
                 &edit.notes,
             )?;
         }
-        if edit.source != source {
+        if components.changelog.enabled() && edit.source != source {
             if data.development {
                 return Err(Error::invalid(
                     "existing development state conflicts with released changelog",
                 ));
             }
-            fs::write(path, &edit.source)?;
+            fs::write(changelog_path(components)?, &edit.source)?;
         }
         data.notes = edit.notes;
         Ok(Edited(data))
@@ -925,7 +938,7 @@ impl Step<Analyzed> for PrepareStep {
                 "preparation hook changed captured package identity",
             ));
         }
-        let source = fs::read_to_string(changelog_path(components)?)?;
+        let source = read_changelog(components)?;
         let generated = data
             .capture
             .inputs
@@ -1241,13 +1254,16 @@ impl Step<Hosted> for EditNextStep {
             let current = components.package.metadata()?.version;
             if current == *data.release.version() {
                 components.package.set_version(next)?;
-                let path = changelog_path(components)?;
-                let source = fs::read_to_string(&path)?;
-                let updated = components
-                    .changelog
-                    .next(&source, data.release.version(), next)?;
-                if source != updated {
-                    fs::write(path, updated)?;
+                if components.changelog.enabled() {
+                    let path = changelog_path(components)?;
+                    let source = fs::read_to_string(&path)?;
+                    let updated =
+                        components
+                            .changelog
+                            .next(&source, data.release.version(), next)?;
+                    if source != updated {
+                        fs::write(path, updated)?;
+                    }
                 }
             } else if current != *next {
                 return Err(Error::invalid(
@@ -1297,7 +1313,7 @@ impl Step<Hosted> for NextStep {
                     "next hook changed captured package identity",
                 ));
             }
-            let source = fs::read_to_string(changelog_path(components)?)?;
+            let source = read_changelog(components)?;
             let edit = components.changelog.release(
                 &source,
                 data.release.version(),

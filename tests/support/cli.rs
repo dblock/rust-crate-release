@@ -56,9 +56,17 @@ pub fn check(binary: &Path) -> Result {
         };
         let fixture = GitProject::cargo_library()?;
         let root = fixture.root();
+        let format = if override_mode == "empty" {
+            fs::remove_file(root.join("CHANGELOG.md"))?;
+            "disabled"
+        } else {
+            "intridea"
+        };
         fs::write(
             root.join("rcr.toml"),
-            "changelog-format = \"intridea\"\nverification-delay-seconds = 0\nartifact-directory = \".git/configured-rcr\"\n",
+            format!(
+                "changelog-format = \"{format}\"\nverification-delay-seconds = 0\nartifact-directory = \".git/configured-rcr\"\n"
+            ),
         )?;
         fs::write(
             root.join("src/lib.rs"),
@@ -104,6 +112,9 @@ pub fn check(binary: &Path) -> Result {
         assert_eq!(completed["version"], released);
         assert_eq!(completed["next_version"], next);
         assert_eq!(completed["verification"]["status"], "verified");
+        if override_mode == "empty" {
+            assert!(!root.join("CHANGELOG.md").exists());
+        }
         assert_eq!(fs::read(archive)?, bytes);
         assert_eq!(fs::read(&inputs)?, original_inputs);
         assert_eq!(
