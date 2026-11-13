@@ -34,6 +34,14 @@ For local coverage, run `cargo llvm-cov --locked --workspace --lcov --output-pat
 
 The README coverage badge links to the [master coverage report](https://coveralls.io/github/dblock/rust-crate-release?branch=master); the Coverage job also retains `lcov.info` in its `coverage` artifact. If Coveralls reports that the repository is unclaimed, a repository administrator must sign in with GitHub and select **Claim** in the repository's Coveralls settings to enable commit statuses. Report uploads and the badge work before claiming.
 
+## Benchmarks
+
+Run `cargo xtask bench-tests` for separate library, CLI, release-runner, maintenance, and doctest wall times. It precompiles tests, then runs each suite once in sequence with its normal internal parallelism, saving seconds to `target/benchmarks/test-suites.json`. Timings include Cargo startup and, for doctests, rustdoc compilation; they are observations rather than statistical performance assertions. Run on an otherwise idle machine and repeat to assess variance.
+
+Run `cargo bench --locked -p xtask --bench operations` for optimized Criterion benchmarks of Markdown parsing, changelog release/next transformations, default and glob-rule semantic analysis, archive opening/verification, and local publication reconciliation. Documents and commit histories use 10, 100, and 1,000 entries. The archive fixture has a deterministic 256 KiB payload; fixture generation, Cargo packaging, and initial publication are outside the measured loops. Archive and reconciliation operations include filesystem I/O, temporary extraction, and offline `cargo metadata` subprocesses, not just hashing; archive throughput counts compressed bytes. No benchmark contacts a production registry or host.
+
+Criterion uses 20 samples, a one-second warmup, and a two-second target measurement window per case, extending that window when needed for slow operations. Save a baseline with `cargo bench --locked -p xtask --bench operations -- --save-baseline before`, then compare a later revision with `-- --baseline before` on the same machine and toolchain. Results live under Cargo's target directory in `criterion/`. Benchmarks belong to the private maintenance package, do not ship in the crate, and are not release-validation gates; compare them separately from debug-profile test timings.
+
 ## Documentation and Tooling
 
 Keep Markdown paragraphs on one source line. Human-readable Markdown headings and YAML workflow/job/step display names use title case; preserve proper names, acronyms, identifiers, and expressions. `cargo xtask lint` enforces these policies with a Markdown parser and a YAML-aware checker, alongside Markdown structure, spelling, Rust, and Actions checks. Review narrow vocabulary exceptions in `.typos.toml`; do not suppress entire documentation trees.

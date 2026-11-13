@@ -4,6 +4,10 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- [#36](https://github.com/dblock/rust-crate-release/pull/36): Centralize simulator endpoint validation, reuse single-read archive verification across hosting and local publication adapters, and add repeatable test-suite timings and function benchmarks without changing public APIs - [@dblock](https://github.com/dblock).
+
 ## [0.1.2] - 2026-11-12
 
 ### Added

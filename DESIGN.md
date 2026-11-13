@@ -40,6 +40,8 @@ The publisher uses Cargo's documented [registry Web API](https://doc.rust-lang.o
 
 Prove this boundary against a local simulated Cargo-compatible registry: capture the request, compare its archive bytes and SHA-256 to the validated artifact, inspect metadata for supported manifest forms, then build consumers from the downloaded archive. A successful Cargo dry run alone is insufficient. No real-registry upload is part of PR tests.
 
+GitHub hosting and local publication adapters use the same single-read archive validation as the registry publisher, so validation and upload consume one byte snapshot. The registry, hosting, and Actions simulators share a bare HTTP(S) loopback-origin check; production endpoint and credential policies remain provider-specific.
+
 ## Release Sequence and Recovery
 
 Capture source identity/date once; reject dirty/non-default/shallow or conflicting state before edits. Stage only trusted preparation changes and retain the intended tree. Validate, commit, package reproducibly, inspect the normalized manifest, exercise the actual archive, and create the local tag/bundle. Preserve artifacts durably before any publication; Actions upload failure must prevent upload to the registry.

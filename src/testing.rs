@@ -5,7 +5,6 @@ use crate::package::Artifact;
 use crate::registry::{PackagePublisher, PublishOutcome, PublishedCrate};
 use crate::{Error, Release, Result};
 use semver::Version;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
@@ -41,19 +40,6 @@ impl DirectoryReleaseHost {
     }
 }
 
-fn artifact_bytes(artifact: &Artifact) -> Result<Vec<u8>> {
-    artifact.verify()?;
-    let bytes = fs::read(artifact.path())?;
-    let checksum: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    if checksum != artifact.checksum() {
-        return Err(Error::invalid("artifact changed before local publication"));
-    }
-    Ok(bytes)
-}
-
 fn atomic_write(root: &Path, path: &Path, bytes: &[u8]) -> Result {
     let mut temporary = tempfile::NamedTempFile::new_in(root)?;
     temporary.write_all(bytes)?;
@@ -72,7 +58,7 @@ impl ReleaseHost for DirectoryReleaseHost {
                 "local hosting inputs do not match the captured release",
             ));
         }
-        let bytes = artifact_bytes(artifact)?;
+        let bytes = artifact.validated_bytes()?;
         let directory = self.root.join(release.tag());
         if fs::symlink_metadata(&directory).is_ok_and(|metadata| !metadata.is_dir()) {
             return Err(Error::invalid(
@@ -172,7 +158,7 @@ impl PackagePublisher for LocalRegistry {
         artifact: &Artifact,
         _provider: &dyn ExecutionProvider,
     ) -> Result<PublishOutcome> {
-        artifact.verify()?;
+        let bytes = artifact.validated_bytes()?;
         if let Some(existing) = self.lookup(artifact.name(), artifact.version())? {
             if existing.checksum != artifact.checksum() {
                 return Err(Error::invalid(
@@ -182,7 +168,6 @@ impl PackagePublisher for LocalRegistry {
             return Ok(PublishOutcome::Reused);
         }
         let destination = self.archive_path(artifact.name(), artifact.version())?;
-        let bytes = artifact_bytes(artifact)?;
         let mut temporary = tempfile::NamedTempFile::new_in(&self.root)?;
         temporary.write_all(&bytes)?;
         temporary
@@ -724,6 +709,28 @@ mod tests {
         assert_eq!(
             store.retained_artifact(&store.read()?.unwrap())?.checksum(),
             first.checksum()
+        );
+        let empty_registry =
+            LocalRegistry::new(project.temporary_directory().join("empty-registry"))?;
+        let empty_host =
+            DirectoryReleaseHost::new(project.temporary_directory().join("empty-hosting"))?;
+        fs::write(first.path(), b"changed retained archive")?;
+        for registry in [&registry, &empty_registry] {
+            assert!(registry.publish(&first, &LocalExecutionProvider).is_err());
+        }
+        for host in [&host, &empty_host] {
+            assert!(
+                host.publish(&release, release.source_commit(), "- Tampered.", &first)
+                    .is_err()
+            );
+        }
+        assert_eq!(registry.publication_count(), 1);
+        assert_eq!(host.publication_count(), 2);
+        assert_eq!(fs::read_dir(&empty_registry.root)?.count(), 0);
+        assert_eq!(fs::read_dir(&empty_host.root)?.count(), 0);
+        assert_eq!(
+            fs::read(host.root.join(release.tag()).join("release.json"))?,
+            serde_json::to_vec_pretty(&hosted)?
         );
         Ok(())
     }

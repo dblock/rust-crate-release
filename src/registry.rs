@@ -81,23 +81,7 @@ impl CratesIoPublisher {
     pub fn with_endpoint(endpoint: &str, token: Option<String>) -> Result<Self> {
         let endpoint =
             Url::parse(endpoint).map_err(|_| Error::invalid("invalid local registry endpoint"))?;
-        let loopback = endpoint
-            .host_str()
-            .and_then(|host| {
-                host.trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .parse::<std::net::IpAddr>()
-                    .ok()
-            })
-            .is_some_and(|address| address.is_loopback());
-        if !loopback
-            || !matches!(endpoint.scheme(), "http" | "https")
-            || !endpoint.username().is_empty()
-            || endpoint.password().is_some()
-            || endpoint.query().is_some()
-            || endpoint.fragment().is_some()
-            || endpoint.path() != "/"
-        {
+        if !crate::http::is_loopback_origin(&endpoint) {
             return Err(Error::invalid(
                 "simulated registries require a bare loopback endpoint",
             ));

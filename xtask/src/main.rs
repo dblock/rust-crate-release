@@ -1,3 +1,4 @@
+mod benchmarks;
 mod docs;
 mod package;
 mod setup;
@@ -24,6 +25,7 @@ fn execute() -> Result {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     match std::env::args().nth(1).as_deref() {
         Some("setup") => setup::check(root)?,
+        Some("bench-tests") => benchmarks::test_suites(root)?,
         Some("lint") => {
             run(root, "cargo", &["fmt", "--all", "--", "--check"])?;
             run(
@@ -53,7 +55,7 @@ fn execute() -> Result {
             run(root, "actionlint", &[])?;
         }
         Some("package") => package::check(root)?,
-        _ => return Err("usage: cargo xtask <setup|lint|package>".into()),
+        _ => return Err("usage: cargo xtask <setup|lint|package|bench-tests>".into()),
     }
     Ok(())
 }
