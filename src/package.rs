@@ -1301,7 +1301,9 @@ pub(crate) mod tests {
         let bytes = FIXTURE.get_or_init(|| {
             let fixture = fixture("rcr-metadata-fixture", false);
             let manifest = fixture.path().join("Cargo.toml");
-            let mut source = fs::read_to_string(&manifest).unwrap();
+            let mut source = fs::read_to_string(&manifest)
+                .unwrap()
+                .replace("include = [", "include = [\"build.rs\", ");
             source.push_str(
                 "\n[dependencies]\nrenamed = { package = \"serde\", version = \"1.0.229\", optional = true, default-features = false, features = [\"derive\"] }\n\
                  [dev-dependencies]\nserde_json = \"1.0.154\"\n\
@@ -1310,6 +1312,24 @@ pub(crate) mod tests {
                  [features]\nextra = [\"dep:renamed\"]\n",
             );
             fs::write(&manifest, source).unwrap();
+            fs::write(
+                fixture.path().join("build.rs"),
+                "fn main() {\n\
+                 let version = semver::Version::parse(env!(\"CARGO_PKG_VERSION\")).unwrap();\n\
+                 println!(\"cargo::rustc-env=FIXTURE_VERSION={version}\");\n\
+                 }\n",
+            )
+            .unwrap();
+            fs::write(
+                fixture.path().join("src/lib.rs"),
+                "pub fn answer() -> u32 { 42 }\n\
+                 pub const VERSION: &str = env!(\"FIXTURE_VERSION\");\n\
+                 #[cfg(windows)]\n\
+                 #[derive(Debug, thiserror::Error)]\n\
+                 #[error(\"metadata fixture error\")]\n\
+                 pub struct FixtureError;\n",
+            )
+            .unwrap();
             run_cargo(
                 Command::new("cargo").current_dir(fixture.path()).args(["generate-lockfile", "--offline"]),
                 "dependency fixture lockfile",

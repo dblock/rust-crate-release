@@ -8,6 +8,10 @@ This changelog follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - [#36](https://github.com/dblock/rust-crate-release/pull/36): Centralize simulator endpoint validation, reuse single-read archive verification across hosting and local publication adapters, and add repeatable test-suite timings and function benchmarks without changing public APIs - [@dblock](https://github.com/dblock).
 
+### Fixed
+
+- [#37](https://github.com/dblock/rust-crate-release/pull/37): Make Criterion an opt-in benchmark dependency, check benchmark features during lint validation, exercise package-metadata fixture dependencies, and fail contributor builds on compiler or Cargo lint warnings - [@dblock](https://github.com/dblock).
+
 ## [0.1.2] - 2026-11-12
 
 ### Added

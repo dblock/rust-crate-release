@@ -6,7 +6,11 @@ rust-version = "1.99.1"
 publish = false
 default-run = "xtask"
 
+[features]
+benchmarks = ["dep:criterion"]
+
 [dependencies]
+criterion = { version = "0.8.2", optional = true, default-features = false, features = ["cargo_bench_support"] }
 rust-crate-release = { path = ".." }
 regex = "1.13.1"
 flate2 = "1.1.11"
@@ -18,12 +22,12 @@ tempfile = "3.27.0"
 yaml-rust2 = "0.13.0"
 zip = { version = "9.5.1", default-features = false, features = ["deflate-flate2"] }
 
-[dev-dependencies]
-criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
-
-[[bench]]
+[[bin]]
 name = "operations"
+path = "src/bin/operations.rs"
+test = false
 harness = false
+required-features = ["benchmarks"]
 
 [lints]
 workspace = true
