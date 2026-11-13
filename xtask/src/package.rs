@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path};
 use std::process::Command;
+use std::time::Instant;
 use tar::Archive;
 
 #[path = "../../tests/support/cli.rs"]
@@ -42,7 +43,20 @@ fn run_archive_cargo(root: &Path, target: &Path, args: &[&str]) -> Result {
     run(root, "cargo", &args)
 }
 
+fn timed<T>(phase: &str, check: impl FnOnce() -> Result<T>) -> Result<T> {
+    let started = Instant::now();
+    eprintln!("Package validation starting: {phase}");
+    let result = check();
+    eprintln!(
+        "Package validation {}: {phase} ({:.2}s)",
+        if result.is_ok() { "passed" } else { "failed" },
+        started.elapsed().as_secs_f64()
+    );
+    result
+}
+
 pub fn check(root: &Path) -> Result {
+    let started = Instant::now();
     let metadata = Command::new("cargo")
         .args(["metadata", "--locked", "--no-deps", "--format-version", "1"])
         .current_dir(root)
@@ -66,17 +80,19 @@ pub fn check(root: &Path) -> Result {
     let target = metadata["target_directory"]
         .as_str()
         .ok_or("missing target directory")?;
-    run(
-        root,
-        "cargo",
-        &[
-            "package",
-            "--locked",
-            "--allow-dirty",
-            "--package",
-            "rust-crate-release",
-        ],
-    )?;
+    timed("Package Archive", || {
+        run(
+            root,
+            "cargo",
+            &[
+                "package",
+                "--locked",
+                "--allow-dirty",
+                "--package",
+                "rust-crate-release",
+            ],
+        )
+    })?;
     let archive_path = Path::new(target)
         .join("package")
         .join(format!("{archive_root}.crate"));
@@ -136,45 +152,52 @@ pub fn check(root: &Path) -> Result {
     run(&consumer, "cargo", &["generate-lockfile", "--offline"])?;
     // Keep source/install isolation while reusing compiled dependencies across validations.
     let consumer_target = Path::new(target).join("archive-consumer");
-    run_archive_cargo(
-        &consumer,
-        &consumer_target,
-        &["run", "--locked", "--offline"],
-    )?;
+    timed("Extracted Library Consumer", || {
+        run_archive_cargo(
+            &consumer,
+            &consumer_target,
+            &["run", "--locked", "--offline"],
+        )
+    })?;
     let install = temporary.path().join("installed");
-    run_archive_cargo(
-        temporary.path(),
-        &consumer_target,
-        &[
-            "install",
-            "--locked",
-            "--offline",
-            "--path",
-            temporary
-                .path()
-                .join(&archive_root)
-                .to_str()
-                .ok_or("non-UTF-8 extracted path")?,
-            "--root",
-            install.to_str().ok_or("non-UTF-8 installation path")?,
-            "--debug",
-            "--bin",
-            "rcr",
-        ],
-    )?;
-    cli_fixture::check(
-        &install
-            .join("bin")
-            .join(format!("rcr{}", std::env::consts::EXE_SUFFIX)),
-    )?;
+    timed("Install Extracted CLI", || {
+        run_archive_cargo(
+            temporary.path(),
+            &consumer_target,
+            &[
+                "install",
+                "--locked",
+                "--offline",
+                "--path",
+                temporary
+                    .path()
+                    .join(&archive_root)
+                    .to_str()
+                    .ok_or("non-UTF-8 extracted path")?,
+                "--root",
+                install.to_str().ok_or("non-UTF-8 installation path")?,
+                "--debug",
+                "--bin",
+                "rcr",
+            ],
+        )
+    })?;
+    timed("Installed CLI Fixtures", || {
+        cli_fixture::check(
+            &install
+                .join("bin")
+                .join(format!("rcr{}", std::env::consts::EXE_SUFFIX)),
+        )
+    })?;
     if fs::read(&archive_path)? != bytes {
         return Err("validated archive changed during consumer validation".into());
     }
     eprintln!(
-        "Validated {} ({} bytes, {} files) and its extracted-artifact consumer.",
+        "Validated {} ({} bytes, {} files) and its extracted-artifact consumer in {:.2}s.",
         archive_path.display(),
         bytes.len(),
-        files.len()
+        files.len(),
+        started.elapsed().as_secs_f64()
     );
     Ok(())
 }
