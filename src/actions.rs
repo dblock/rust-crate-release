@@ -258,22 +258,7 @@ impl GitHubArtifacts {
     pub fn for_test_server(id: u64, endpoint: &str) -> Result<Self> {
         let url =
             Url::parse(endpoint).map_err(|_| Error::invalid("invalid artifact test endpoint"))?;
-        let loopback = url
-            .host_str()
-            .and_then(|host| {
-                host.trim_matches(['[', ']'])
-                    .parse::<std::net::IpAddr>()
-                    .ok()
-            })
-            .is_some_and(|address| address.is_loopback());
-        if !loopback
-            || !matches!(url.scheme(), "http" | "https")
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.path() != "/"
-            || url.query().is_some()
-            || url.fragment().is_some()
-        {
+        if !crate::http::is_loopback_origin(&url) {
             return Err(Error::invalid(
                 "artifact test endpoint must be a bare loopback origin",
             ));

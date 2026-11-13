@@ -1,13 +1,12 @@
 //! Idempotent GitHub Releases and retained Cargo archive assets.
 
-use crate::package::Artifact;
+use crate::package::{Artifact, checksum};
 use crate::{Error, Release, Result};
 use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue, LOCATION};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 use std::io::Read;
@@ -153,23 +152,7 @@ impl GitHubReleaseHost {
         validate_repository(&repository)?;
         let endpoint =
             Url::parse(endpoint).map_err(|_| Error::invalid("invalid GitHub test endpoint"))?;
-        let loopback = endpoint
-            .host_str()
-            .and_then(|host| {
-                host.trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .parse::<std::net::IpAddr>()
-                    .ok()
-            })
-            .is_some_and(|address| address.is_loopback());
-        if !loopback
-            || !matches!(endpoint.scheme(), "http" | "https")
-            || !endpoint.username().is_empty()
-            || endpoint.password().is_some()
-            || endpoint.path() != "/"
-            || endpoint.query().is_some()
-            || endpoint.fragment().is_some()
-        {
+        if !crate::http::is_loopback_origin(&endpoint) {
             return Err(Error::invalid(
                 "GitHub test endpoint must be a bare loopback origin",
             ));
@@ -351,7 +334,7 @@ impl GitHubReleaseHost {
     fn asset_matches(
         &self,
         asset: &HostedAsset,
-        checksum: &str,
+        expected_checksum: &str,
         length: u64,
         token: &SecretToken,
     ) -> Result<bool> {
@@ -359,10 +342,10 @@ impl GitHubReleaseHost {
             return Ok(false);
         }
         if let Some(digest) = &asset.digest {
-            return Ok(digest[7..].eq_ignore_ascii_case(checksum));
+            return Ok(digest[7..].eq_ignore_ascii_case(expected_checksum));
         }
         let bytes = self.download(asset.id, length, token)?;
-        Ok(sha256(&bytes).eq_ignore_ascii_case(checksum))
+        Ok(checksum(&bytes).eq_ignore_ascii_case(expected_checksum))
     }
 
     fn download(&self, asset_id: u64, length: u64, token: &SecretToken) -> Result<Vec<u8>> {
@@ -478,12 +461,8 @@ impl ReleaseHost for GitHubReleaseHost {
                 "hosted archive identity does not match the captured release",
             ));
         }
-        artifact.verify()?;
-        let bytes = std::fs::read(artifact.path())?;
-        let checksum = sha256(&bytes);
-        if checksum != artifact.checksum() {
-            return Err(Error::invalid("retained archive changed before hosting"));
-        }
+        let bytes = artifact.validated_bytes()?;
+        let checksum = artifact.checksum();
         let length = bytes.len() as u64;
         let name = format!("{}-{}.crate", release.name(), release.version());
         let token = self.token()?;
@@ -495,7 +474,7 @@ impl ReleaseHost for GitHubReleaseHost {
         let existing = canonical_asset(&assets, &name)?;
         self.patch(&hosted, release, commit, notes, &token)?;
         let reuse = match existing {
-            Some(asset) => self.asset_matches(asset, &checksum, length, &token)?,
+            Some(asset) => self.asset_matches(asset, checksum, length, &token)?,
             None => false,
         };
         if !reuse {
@@ -515,20 +494,13 @@ impl ReleaseHost for GitHubReleaseHost {
         let assets = self.assets(fresh.id, &token)?;
         let asset = canonical_asset(&assets, &name)?
             .ok_or_else(|| Error::invalid("GitHub archive asset is missing after hosting"))?;
-        if !self.asset_matches(asset, &checksum, length, &token)? {
+        if !self.asset_matches(asset, checksum, length, &token)? {
             return Err(Error::invalid(
                 "fresh GitHub archive asset does not match retained bytes",
             ));
         }
         Ok(())
     }
-}
-
-fn sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
 }
 
 pub(crate) fn validate_repository(repository: &str) -> Result {
@@ -987,7 +959,7 @@ mod tests {
             "size": bytes.len(),
             "state": "uploaded",
             "digest": if digest {
-                Some(format!("sha256:{}", sha256(bytes)))
+                Some(format!("sha256:{}", checksum(bytes)))
             } else {
                 None
             },

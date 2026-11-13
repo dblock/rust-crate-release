@@ -10,6 +10,7 @@ pub mod execution;
 pub mod git;
 pub mod hooks;
 pub mod hosting;
+mod http;
 pub mod markdown;
 pub mod package;
 pub mod registry;
